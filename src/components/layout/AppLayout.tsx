@@ -4,13 +4,7 @@ import { Home, Rss, Archive, ShieldCheck } from "lucide-react";
 import { SidebarProvider, SidebarInset, SidebarTrigger, Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui/sidebar";
 import { ThemeToggle } from "@/components/ThemeToggle";
 export function AppLayout({ children, container = false }: { children: React.ReactNode; container?: boolean }) {
-  let location;
-  try {
-    location = useLocation();
-  } catch (e) {
-    // Fallback for context-less rendering (e.g., error boundaries outside router)
-    location = { pathname: "/" };
-  }
+  const location = useLocation();
   return (
     <SidebarProvider defaultOpen={true}>
       <Sidebar>

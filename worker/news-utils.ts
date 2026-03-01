@@ -66,7 +66,6 @@ async function fetchWithRetry(url: string, attempts: number = 2): Promise<Respon
       if (res.ok) return res;
     } catch (e: any) {
       clearTimeout(timeoutId);
-      console.warn(`[FETCH] Attempt ${i + 1} failed for ${url}`);
     }
     if (i < attempts - 1) await new Promise(r => setTimeout(r, 1000));
   }
@@ -81,7 +80,7 @@ export async function fetchAndParseRSS(sourceId: string, sourceName: string, url
     const jsonObj = parser.parse(xml);
     const items = jsonObj.rss?.channel?.item || jsonObj.feed?.entry || [];
     const normalizedItems = Array.isArray(items) ? items : [items];
-    const cutoff = subHours(new Date(), 72);
+    const cutoff = subHours(new Date(), 48); // Tighter cutoff for broadsheet relevance
     return normalizedItems
       .map((item: any) => {
         const pubDateStr = item.pubDate || item.updated || item.published || item['dc:date'] || new Date().toISOString();
@@ -105,7 +104,6 @@ export async function fetchAndParseRSS(sourceId: string, sourceName: string, url
       })
       .filter(a => isAfter(parseISO(a.pubDate), cutoff));
   } catch (e) {
-    console.error(`[RSS] Parse error for ${sourceName}:`, e);
     return [];
   }
 }
@@ -115,16 +113,12 @@ export async function summarizeCluster(articles: Article[], env: any): Promise<{
   const ANTHROPIC_KEY = env.ANTHROPIC_API_KEY || env.ANTHROPIC_KEY;
   const OPENAI_KEY = env.OPENAI_API_KEY || env.OPENAI_KEY;
   if (!ANTHROPIC_KEY && !OPENAI_KEY) return fallback;
-  const systemPrompt = "You are a neutral news synthesizer. Summarize the provided snippets into a bias-minimized report. Discount editorialized adjectives. Output strictly JSON: { \"summary\": \"string\", \"tags\": [\"string\", \"string\"] }.";
+  const systemPrompt = "You are a neutral news synthesizer for a digital broadsheet. Summarize snippets into a professional report. No bias. Output JSON: { \"summary\": \"string\", \"tags\": [\"string\"] }.";
   try {
     if (ANTHROPIC_KEY) {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: {
-          "x-api-key": ANTHROPIC_KEY,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json"
-        },
+        headers: { "x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
         body: JSON.stringify({
           model: "claude-3-5-sonnet-20240620",
           max_tokens: 500,
@@ -139,16 +133,10 @@ export async function summarizeCluster(articles: Article[], env: any): Promise<{
     } else if (OPENAI_KEY) {
       const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
-        headers: {
-          "Authorization": `Bearer ${OPENAI_KEY}`,
-          "Content-Type": "application/json"
-        },
+        headers: { "Authorization": `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: snippets }
-          ],
+          messages: [{ role: "system", content: systemPrompt }, { role: "user", content: snippets }],
           response_format: { type: "json_object" }
         })
       });
@@ -157,9 +145,7 @@ export async function summarizeCluster(articles: Article[], env: any): Promise<{
         return JSON.parse(data.choices[0].message.content);
       }
     }
-  } catch (e) {
-    console.error("[AI SUMMARIZE] Synthesis failed:", e);
-  }
+  } catch (e) {}
   return fallback;
 }
 export async function clusterArticles(articles: Article[], env: Env): Promise<NewsCluster[]> {
@@ -177,7 +163,6 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
     });
   });
   const clusterGroups: Article[][] = [];
-  const now = new Date();
   for (const article of sortedArticles) {
     const features = articleFeatures.get(article.id)!;
     let found = false;
@@ -194,6 +179,7 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
     }
     if (!found) clusterGroups.push([article]);
   }
+  const now = new Date();
   return clusterGroups.map(group => {
     const representative = group[0];
     const uniqueSources = Array.from(new Set(group.map(a => a.sourceId)));
@@ -206,7 +192,7 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
       return d > max ? d : max;
     }, new Date(0));
     const hoursOld = Math.max(0, differenceInHours(now, newestDate));
-    const recencyScore = Math.exp(-hoursOld / 48);
+    const recencyScore = Math.exp(-hoursOld / 24); // More aggressive decay for broadsheet freshness
     const sourceCount = sourceNames.length;
     let avgSim = 1.0;
     if (group.length > 1) {
@@ -220,9 +206,10 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
       }
       avgSim = totalSim / (pairs || 1);
     }
-    const sourceDiversityWeight = Math.min(2.0, 1 + (sourceCount * 0.2));
-    const consensusFactor = Math.min(1, avgSim * sourceDiversityWeight);
-    const impactScore = (sourceCount * 0.8) + (recencyScore * 4.0) + (consensusFactor * 3.0);
+    // Diverse sources are heavily prioritized in Broadsheet logic
+    const sourceDiversityWeight = sourceCount > 1 ? Math.min(2.5, 1 + (sourceCount * 0.4)) : 0.6;
+    const consensusFactor = Math.min(1, avgSim * (sourceCount / (sourceCount + 1)));
+    const impactScore = (sourceCount * 1.5) + (recencyScore * 5.0) + (consensusFactor * 2.0);
     return {
       id: crypto.randomUUID(),
       representativeTitle: representative.title,
@@ -230,14 +217,14 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
       sourceSpread: sourceNames,
       sourceCount,
       neutralSummary: representative.contentSnippet || representative.title,
-      tags: [], // Populated in post-processing summarization pass
+      tags: [],
       impactScore,
       biasScore: Math.max(0, 1 - avgSim),
       clusterVariance: Math.max(0, 1 - consensusFactor),
       meanSlant,
       consensusFactor
     };
-  }).sort((a, b) => b.impactScore - a.impactScore).slice(0, 15);
+  }).sort((a, b) => b.impactScore - a.impactScore).slice(0, 20); // Top 20 for expanded UI
 }
 export function generateCSV(digest: any): string {
   const headers = ["Rank", "Title", "Mean Slant", "Consensus", "Source Count", "Tags", "Neutral Summary", "Link"];
