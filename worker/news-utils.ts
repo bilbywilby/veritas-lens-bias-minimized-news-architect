@@ -3,9 +3,9 @@ import { subHours, isAfter, parseISO } from "date-fns";
 import type { Article, NewsCluster, DailyDigest } from "@shared/news-types";
 export async function fetchAndParseRSS(sourceId: string, sourceName: string, url: string): Promise<Article[]> {
   try {
-    const response = await fetch(url, { 
+    const response = await fetch(url, {
       headers: { "User-Agent": "VeritasLens/1.0 (Cloudflare Worker)" },
-      signal: AbortSignal.timeout(5000) 
+      signal: AbortSignal.timeout(5000)
     });
     if (!response.ok) {
       console.warn(`[FETCH FAIL] ${sourceName}: ${response.status}`);
@@ -30,14 +30,14 @@ export async function fetchAndParseRSS(sourceId: string, sourceName: string, url
           sourceId,
           sourceName,
           title,
-          link: item.link?.['@_href'] || item.link || "",
+          link: item.link?.['@_href'] || (typeof item.link === 'string' ? item.link : item.link?.link || ""),
           pubDate: pubDate.toISOString(),
           description: description,
           contentSnippet: description.substring(0, 250).replace(/<[^>]*>?/gm, '') || title
         };
       })
       .filter(a => {
-        try { return isAfter(parseISO(a.pubDate), cutoff); } 
+        try { return isAfter(parseISO(a.pubDate), cutoff); }
         catch { return true; }
       });
   } catch (e) {
@@ -77,31 +77,31 @@ export function clusterArticles(articles: Article[]): NewsCluster[] {
       }
     }
     const sourceSpread = Array.from(new Set(currentClusterArticles.map(a => a.sourceName)));
+    const sourceCount = sourceSpread.length;
     clusters.push({
       id: crypto.randomUUID(),
       representativeTitle: article.title,
       articles: currentClusterArticles,
       sourceSpread,
-      sourceCount: sourceSpread.length,
+      sourceCount,
       neutralSummary: currentClusterArticles[0].contentSnippet,
-      impactScore: sourceSpread.length * 10 // Basic density score
+      impactScore: sourceCount * 10 
     });
   }
   return clusters.sort((a, b) => b.impactScore - a.impactScore);
 }
 export function generateCSV(digest: DailyDigest): string {
-  const rows = [
-    ["Rank", "Title", "Summary", "Sources", "Source Count", "Link"]
-  ];
-  digest.clusters.forEach((c, idx) => {
-    rows.push([
-      (idx + 1).toString(),
-      c.representativeTitle.replace(/"/g, '""'),
-      c.neutralSummary.replace(/"/g, '""').replace(/\n/g, ' '),
-      c.sourceSpread.join('; '),
-      c.sourceCount.toString(),
-      c.articles[0]?.link || ""
-    ]);
-  });
-  return rows.map(r => r.map(cell => `"${cell}"`).join(",")).join("\n");
+  const headers = ["Rank", "Title", "Summary", "Sources", "Source Count", "Link"];
+  const rows = digest.clusters.map((c, idx) => [
+    (idx + 1).toString(),
+    c.representativeTitle.replace(/"/g, '""'),
+    c.neutralSummary.replace(/"/g, '""').replace(/\n/g, ' '),
+    c.sourceSpread.join('; '),
+    c.sourceCount.toString(),
+    c.articles[0]?.link || ""
+  ]);
+  const csvContent = [headers, ...rows]
+    .map(r => r.map(cell => `"${cell}"`).join(","))
+    .join("\n");
+  return csvContent;
 }

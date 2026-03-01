@@ -128,7 +128,7 @@ export function SourcesPage() {
                       defaultValue={[source.weight || 1]} 
                       max={5} 
                       min={1} 
-                      step={1} 
+                      step={1}
                       onValueCommit={([val]) => patchMutation.mutate({ id: source.id, updates: { weight: val } })}
                     />
                   </div>

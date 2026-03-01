@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from './core-utils';
 import { NewsSourceEntity, DailyDigestEntity } from "./news-entities";
-import { ok, bad, notFound, isStr } from './core-utils';
+import { ok, bad, notFound } from './core-utils';
 import { fetchAndParseRSS, clusterArticles, generateCSV } from "./news-utils";
 import { format } from "date-fns";
 export function userRoutes(app: Hono<{ Bindings: Env }>) {
@@ -37,13 +37,14 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
   });
   // --- DIGEST & ARCHIVE ---
   app.get('/api/digest/latest', async (c) => {
-    const { items } = await DailyDigestEntity.list(c.env, null, 1);
-    return ok(c, items[0] || null);
+    const { items } = await DailyDigestEntity.list(c.env, null, 100);
+    const sorted = items.sort((a, b) => b.generatedAt - a.generatedAt);
+    return ok(c, sorted[0] || null);
   });
   app.get('/api/digest/list', async (c) => {
-    const limit = c.req.query('limit');
-    const page = await DailyDigestEntity.list(c.env, null, limit ? parseInt(limit) : 50);
-    // Sort by generation date descending
+    const limitStr = c.req.query('limit');
+    const limit = limitStr ? parseInt(limitStr) : 50;
+    const page = await DailyDigestEntity.list(c.env, null, limit);
     const sorted = page.items.sort((a, b) => b.generatedAt - a.generatedAt);
     return ok(c, { items: sorted });
   });
@@ -67,8 +68,12 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     if (activeSources.length === 0) return bad(c, "No active sources configured");
     let allArticles = [];
     for (const src of activeSources) {
-      const articles = await fetchAndParseRSS(src.id, src.name, src.url);
-      allArticles.push(...articles);
+      try {
+        const articles = await fetchAndParseRSS(src.id, src.name, src.url);
+        allArticles.push(...articles);
+      } catch (e) {
+        console.error(`[PIPELINE] Failed source ${src.name}:`, e);
+      }
     }
     if (allArticles.length === 0) return bad(c, "No articles found in feeds");
     const clusters = clusterArticles(allArticles);
@@ -81,10 +86,10 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       clusterCount: topClusters.length,
       clusters: topClusters
     });
-    // Mock MailChannels integration
     const sendEmail = c.req.query('sendEmail') === 'true';
     if (sendEmail) {
-       console.log(`[PIPELINE] Mock email triggered for digest ${digestId}`);
+       // Mock integration
+       console.log(`[PIPELINE] Email notification triggered for ${digestId}`);
     }
     return ok(c, digest);
   });

@@ -38,7 +38,7 @@ export function AppLayout({ children, container = false }: { children: React.Rea
         </SidebarContent>
       </Sidebar>
       <SidebarInset className="bg-[#f8fafc] dark:bg-slate-950">
-        <header className="flex h-16 items-center justify-between border-b bg-white dark:bg-slate-900 px-6">
+        <header className="flex h-16 items-center justify-between border-b bg-white dark:bg-slate-900 px-6 shrink-0">
           <SidebarTrigger />
           <ThemeToggle className="relative top-0 right-0" />
         </header>

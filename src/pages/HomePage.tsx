@@ -73,8 +73,7 @@ export function HomePage() {
               <CardDescription className="uppercase tracking-tighter text-[10px] font-bold">Consensus Score</CardDescription>
               <CardTitle className="text-4xl font-serif">8.4/10</CardTitle>
             </CardHeader>
-          </Card>
-        </div>
+          </div>
       )}
       {isLoading ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
