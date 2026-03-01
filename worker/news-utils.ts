@@ -7,27 +7,39 @@ const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 ];
 const STOP_WORDS = new Set(['this', 'that', 'with', 'from', 'about', 'would', 'could', 'their', 'there', 'which', 'after', 'before', 'where', 'while', 'under', 'during', 'against']);
-async function fetchWithRetry(url: string, attempts: number = 3): Promise<Response | null> {
+function cleanText(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1') // Extract CDATA
+    .replace(/<[^>]*>?/gm, '') // Strip HTML
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+async function fetchWithRetry(url: string, attempts: number = 2): Promise<Response | null> {
   for (let i = 0; i < attempts; i++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s hard timeout
     try {
       const ua = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-      // Safety: Reducing timeout to 6s to ensure the 30s Worker limit is never hit across multiple sources
       const res = await fetch(url, {
         headers: { "User-Agent": ua },
-        signal: AbortSignal.timeout(6000)
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
       if (res.ok) return res;
       if (res.status >= 500) throw new Error(`Server Error ${res.status}`);
     } catch (e: any) {
-      const msg = e.message || String(e);
-      if (msg.includes("certificate") || msg.includes("TLS") || msg.includes("ssl")) {
-        console.warn(`[FETCH] SSL/TLS Warning for ${url}: ${msg}. Skipping source.`);
-        return null;
-      }
+      clearTimeout(timeoutId);
+      const msg = e.name === 'AbortError' ? 'Timeout (12s)' : (e.message || String(e));
       console.warn(`[FETCH] Attempt ${i + 1} failed for ${url}:`, msg);
     }
     if (i < attempts - 1) {
-      await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
   return null;
@@ -37,28 +49,36 @@ export async function fetchAndParseRSS(sourceId: string, sourceName: string, url
   if (!response) return [];
   try {
     const xml = await response.text();
-    const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_" });
+    const parser = new XMLParser({ 
+      ignoreAttributes: false, 
+      attributeNamePrefix: "@_",
+      cdataPropName: "__cdata",
+      processEntities: true
+    });
     const jsonObj = parser.parse(xml);
+    // Handle both RSS 2.0 <item> and Atom <entry>
     const items = jsonObj.rss?.channel?.item || jsonObj.feed?.entry || [];
     const normalizedItems = Array.isArray(items) ? items : [items];
     const cutoff = subHours(new Date(), 72);
     return normalizedItems
       .map((item: any) => {
-        const pubDateStr = item.pubDate || item.updated || item['dc:date'] || new Date().toISOString();
+        const pubDateStr = item.pubDate || item.updated || item.published || item['dc:date'] || new Date().toISOString();
         let pubDate;
         try { pubDate = new Date(pubDateStr); } catch { pubDate = new Date(); }
-        const title = (item.title?.["#text"] || item.title || "No Title").trim();
-        const descRaw = item.description || item.summary?.["#text"] || item.summary || "";
-        const description = typeof descRaw === 'string' ? descRaw : "No description available";
+        const rawTitle = item.title?.["__cdata"] || item.title?.["#text"] || item.title || "No Title";
+        const title = cleanText(typeof rawTitle === 'string' ? rawTitle : "No Title");
+        const descRaw = item.description?.["__cdata"] || item.description || item.summary?.["__cdata"] || item.summary?.["#text"] || item.summary || "";
+        const description = cleanText(typeof descRaw === 'string' ? descRaw : "");
+        const link = item.link?.['@_href'] || (typeof item.link === 'string' ? item.link : item.link?.link || "");
         return {
           id: crypto.randomUUID(),
           sourceId,
           sourceName,
           title,
-          link: item.link?.['@_href'] || (typeof item.link === 'string' ? item.link : item.link?.link || ""),
+          link,
           pubDate: pubDate.toISOString(),
           description: description,
-          contentSnippet: description.substring(0, 400).replace(/<[^>]*>?/gm, '') || title
+          contentSnippet: description.substring(0, 400) || title
         };
       })
       .filter(a => {
@@ -162,7 +182,6 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
       consensusFactor
     });
   }
-  // Quality Audit: Returning a tighter Top 12 set for a more focused Briefing
   return clusters.sort((a, b) => b.impactScore - a.impactScore).slice(0, 12);
 }
 export function generateCSV(digest: any): string {
@@ -175,5 +194,5 @@ export function generateCSV(digest: any): string {
     c.sourceCount.toString(),
     c.articles[0]?.link || ""
   ]);
-  return [headers, ...rows].map(r => r.map(cell => `"${cell}"`).join(",")).join("\n");
+  return [headers, ...rows].map(r => r.map((cell: string) => `"${cell}"`).join(",")).join("\n");
 }

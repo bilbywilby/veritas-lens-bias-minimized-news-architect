@@ -12,7 +12,6 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     return;
   }
   routesRegistered = true;
-  // Middleware for system endpoints to ensure fresh data
   app.use('/api/system/*', async (c, next) => {
     await next();
     c.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -92,7 +91,6 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       const maxSlant = parseFloat(c.req.query('maxSlant') || '1.0');
       const sourceFilter = c.req.query('source')?.toLowerCase();
       const queryFilter = c.req.query('q')?.toLowerCase();
-      // Safety Limit: Retaining performance by capping retrieval
       const { items } = await StoryVaultEntity.list(c.env, null, 40);
       const results = items.filter(s => {
         const slantVal = s.slant ?? 0;
@@ -110,7 +108,6 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     try {
       await DailyDigestEntity.ensureSeed(c.env);
       const dateParam = c.req.query('date');
-      // Sub-request Hardening: Limit retrieval to 40 items to stay safely under 50 request limit
       const { items } = await DailyDigestEntity.list(c.env, null, 40);
       let filtered = items;
       if (dateParam) {
@@ -146,11 +143,16 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       const sourcesPage = await NewsSourceEntity.list(c.env);
       const activeSources = (sourcesPage.items || []).filter(s => s.active);
       if (activeSources.length === 0) return bad(c, "Operational Error: No active intelligence streams registered.");
-      const fetchResults = await Promise.all(activeSources.map(async (src) => {
-        try { return await fetchAndParseRSS(src.id, src.name, src.url); }
-        catch (e) { return []; }
+      const settlements = await Promise.allSettled(activeSources.map(async (src) => {
+        return await fetchAndParseRSS(src.id, src.name, src.url);
       }));
-      const allArticles = fetchResults.flat();
+      const allArticles = settlements
+        .map((res, i) => {
+          if (res.status === 'fulfilled') return res.value;
+          console.error(`[PIPELINE] Stream ${activeSources[i].name} failed:`, res.reason);
+          return [];
+        })
+        .flat();
       if (allArticles.length === 0) {
         return bad(c, "Null result from RSS clusters. (0 articles found)");
       }

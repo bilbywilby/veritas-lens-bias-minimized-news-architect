@@ -1,19 +1,20 @@
-import React, { useState, Suspense, useCallback } from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Newspaper, Calendar as CalendarIcon, RefreshCcw, Loader2, Info, Activity, AlertTriangle, Fingerprint } from 'lucide-react';
+import { Newspaper, Calendar as CalendarIcon, RefreshCcw, Loader2, Info, Activity, Fingerprint, Database, ExternalLink } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { IntelligenceCard } from '@/components/IntelligenceCard';
 import { NeutralizationDeepDive } from '@/components/NeutralizationDeepDive';
 import { TourModal } from '@/components/TourModal';
 import { SystemPulse } from '@/components/SystemPulse';
 import { api } from '@/lib/api-client';
 import { toast } from 'sonner';
-import type { DailyDigest, NewsCluster, SystemState } from '@shared/news-types';
+import type { DailyDigest, NewsCluster, SystemState, Article } from '@shared/news-types';
 import { format } from 'date-fns';
 export function HomePage() {
   const queryClient = useQueryClient();
@@ -21,7 +22,7 @@ export function HomePage() {
   const [selectedCluster, setSelectedCluster] = useState<NewsCluster | null>(null);
   const [showTour, setShowTour] = useState(false);
   const formattedDate = date ? format(date, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
-  const { data: digest, isLoading, isError } = useQuery<DailyDigest | null>({
+  const { data: digest, isLoading } = useQuery<DailyDigest | null>({
     queryKey: ['digest', formattedDate],
     queryFn: async () => {
       const res = await api<any>(`/api/digest/list?date=${formattedDate}&limit=1`);
@@ -39,7 +40,7 @@ export function HomePage() {
       queryClient.invalidateQueries({ queryKey: ['digest'] });
       queryClient.invalidateQueries({ queryKey: ['system-stats'] });
       toast.success("Consensus Synchronized", {
-        description: `Synthesized top ${Math.min(data.clusterCount, 10)} intelligence clusters.`
+        description: `Synthesized top ${data.clusterCount} intelligence clusters.`
       });
     },
     onError: (err: any) => toast.error("Sync Failure", { description: err.message })
@@ -47,6 +48,7 @@ export function HomePage() {
   const sortedClusters = digest?.clusters
     ? [...digest.clusters].sort((a, b) => b.impactScore - a.impactScore).slice(0, 10)
     : [];
+  const rawArticles: Article[] = digest?.clusters.flatMap(c => c.articles) || [];
   return (
     <AppLayout container>
       <div className="space-y-12">
@@ -124,15 +126,69 @@ export function HomePage() {
               ))}
             </div>
           ) : sortedClusters.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {sortedClusters.map((cluster, idx) => (
-                <IntelligenceCard 
-                  key={cluster.id} 
-                  cluster={cluster} 
-                  rank={idx + 1} 
-                  onAudit={setSelectedCluster} 
-                />
-              ))}
+            <div className="space-y-16">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                {sortedClusters.map((cluster, idx) => (
+                  <IntelligenceCard
+                    key={cluster.id}
+                    cluster={cluster}
+                    rank={idx + 1}
+                    onAudit={setSelectedCluster}
+                  />
+                ))}
+              </div>
+              {/* Forensic Intelligence Log */}
+              <div className="space-y-6">
+                <div className="flex items-center gap-3 border-b-2 border-slate-900 dark:border-slate-100 pb-4">
+                  <Database className="h-6 w-6 text-sky-600" />
+                  <h2 className="text-3xl font-serif font-bold italic tracking-tight">Forensic Intelligence Log</h2>
+                  <Badge variant="outline" className="ml-auto text-[10px] font-black uppercase">{rawArticles.length} STREAMS ANALYZED</Badge>
+                </div>
+                <div className="bg-white dark:bg-slate-900 rounded-xl border-2 shadow-sm overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-50">
+                        <TableHead className="text-[10px] font-black uppercase tracking-widest w-40">Source Stream</TableHead>
+                        <TableHead className="text-[10px] font-black uppercase tracking-widest">Headline & Context</TableHead>
+                        <TableHead className="text-[10px] font-black uppercase tracking-widest text-right w-32">Captured</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rawArticles.slice(0, 30).map((article) => (
+                        <TableRow key={article.id} className="group border-b last:border-0 hover:bg-slate-50/30 transition-colors">
+                          <TableCell className="align-top py-5">
+                            <Badge variant="secondary" className="text-[9px] font-black uppercase tracking-tight bg-slate-100 text-slate-500 border-none">
+                              {article.sourceName}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="py-5">
+                            <div className="space-y-1.5">
+                              <a href={article.link} target="_blank" rel="noreferrer" className="font-bold text-sm text-slate-900 dark:text-slate-100 hover:text-sky-700 inline-flex items-center gap-1.5 group/link transition-colors">
+                                {article.title}
+                                <ExternalLink className="h-3 w-3 opacity-0 group-hover/link:opacity-100 transition-opacity" />
+                              </a>
+                              <p className="text-xs text-muted-foreground line-clamp-2 italic font-serif leading-relaxed pr-8">
+                                {article.contentSnippet}
+                              </p>
+                            </div>
+                          </TableCell>
+                          <TableCell className="align-top py-5 text-right">
+                            <span className="text-[10px] font-black uppercase text-slate-400">
+                              {format(new Date(article.pubDate), 'MMM d, HH:mm')}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {rawArticles.length === 0 && (
+                    <div className="py-20 text-center">
+                      <Fingerprint className="h-10 w-10 mx-auto text-slate-200 mb-4" />
+                      <p className="text-slate-400 italic font-serif">No forensic signatures localized in current cycle.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           ) : (
             <div className="text-center py-40 border-2 border-dashed rounded-3xl bg-slate-50 dark:bg-slate-950/50">
@@ -141,9 +197,9 @@ export function HomePage() {
               <p className="text-sm text-muted-foreground mb-8 max-w-md mx-auto leading-relaxed">
                 The Edge Story Vault requires a fresh synchronization cycle to generate today's Top 10 consensus reporting clusters.
               </p>
-              <Button 
-                onClick={() => pipelineMutation.mutate()} 
-                variant="outline" 
+              <Button
+                onClick={() => pipelineMutation.mutate()}
+                variant="outline"
                 className="font-black uppercase text-[10px] tracking-widest border-2 h-11 px-8"
               >
                 Execute Pipeline Protocol
@@ -152,10 +208,10 @@ export function HomePage() {
           )}
         </div>
       </div>
-      <NeutralizationDeepDive 
-        cluster={selectedCluster} 
-        isOpen={!!selectedCluster} 
-        onOpenChange={(open) => !open && setSelectedCluster(null)} 
+      <NeutralizationDeepDive
+        cluster={selectedCluster}
+        isOpen={!!selectedCluster}
+        onOpenChange={(open) => !open && setSelectedCluster(null)}
       />
       <TourModal forceOpen={showTour} onClose={() => setShowTour(false)} />
     </AppLayout>
