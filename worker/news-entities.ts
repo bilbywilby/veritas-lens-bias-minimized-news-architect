@@ -1,4 +1,5 @@
 import { IndexedEntity } from "./core-utils";
+import type { Env } from "./core-utils";
 import { XMLParser } from "fast-xml-parser";
 import type { NewsSource, DailyDigest } from "@shared/news-types";
 export class NewsSourceEntity extends IndexedEntity<NewsSource> {
@@ -28,6 +29,15 @@ export class NewsSourceEntity extends IndexedEntity<NewsSource> {
       return false;
     }
   }
+
+  static async ensureSeed(env: Env): Promise<void> {
+    const {items} = await this.list(env);
+    if (items.length === 0) {
+      for (const data of this.seedData) {
+        await this.create(env, data);
+      }
+    }
+  }
 }
 export class DailyDigestEntity extends IndexedEntity<DailyDigest> {
   static readonly entityName = "daily-digest";
@@ -36,7 +46,7 @@ export class DailyDigestEntity extends IndexedEntity<DailyDigest> {
   static seedData: DailyDigest[] = [
     {
       id: "sample-digest-001",
-      generatedAt: Date.now(),
+      generatedAt: Date.now() - 86400000, // yesterday for realistic recency
       articleCount: 142,
       clusterCount: 3,
       consensusScore: 9.2,
@@ -83,4 +93,13 @@ export class DailyDigestEntity extends IndexedEntity<DailyDigest> {
       ]
     }
   ];
+
+  static async ensureSeed(env: Env): Promise<void> {
+    const {items} = await this.list(env);
+    if (items.length === 0) {
+      for (const data of this.seedData) {
+        await this.create(env, data);
+      }
+    }
+  }
 }

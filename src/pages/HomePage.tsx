@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Newspaper, Zap, FileDown, Calendar as CalendarIcon, Network, LayoutList, Fingerprint, TrendingUp, TrendingDown, Minus, HelpCircle, Rss } from 'lucide-react';
+import { Newspaper, Zap, FileDown, Calendar as CalendarIcon, Network, LayoutList, Fingerprint, TrendingUp, TrendingDown, Minus, HelpCircle, Rss, AlertTriangle } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -10,6 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ConsensusMap } from '@/components/ConsensusMap';
 import { ConsensusTimeline } from '@/components/ConsensusTimeline';
+import { ConsensusTopology } from '@/components/ConsensusTopology';
 import { NeutralizationDeepDive } from '@/components/NeutralizationDeepDive';
 import { TourModal } from '@/components/TourModal';
 import { api } from '@/lib/api-client';
@@ -24,8 +25,9 @@ export function HomePage() {
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [selectedCluster, setSelectedCluster] = useState<NewsCluster | null>(null);
   const [showTour, setShowTour] = useState(false);
+  // Robust date formatting with fallback
   const formattedDate = date ? format(date, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
-  const { data: digest, isLoading } = useQuery<DailyDigest | null>({
+  const { data: digest, isLoading, isError } = useQuery<DailyDigest | null>({
     queryKey: ['digest', formattedDate],
     queryFn: async () => {
       try {
@@ -33,9 +35,10 @@ export function HomePage() {
         return res?.items?.[0] || null;
       } catch (err) {
         console.error("Failed to fetch digest:", err);
-        return null;
+        throw err; // Propagate to react-query error state
       }
-    }
+    },
+    retry: 1
   });
   const { data: timelineData } = useQuery<any[]>({
     queryKey: ['analytics-consensus'],
@@ -43,15 +46,28 @@ export function HomePage() {
   });
   const pipelineMutation = useMutation({
     mutationFn: () => api<DailyDigest>(`/api/pipeline/run`, { method: 'POST' }),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['digest'] });
       queryClient.invalidateQueries({ queryKey: ['analytics-consensus'] });
-      toast.success("Intelligence cycle complete");
+      toast.success(`Pipeline success: ${data.clusterCount} clusters identified.`);
     },
     onError: (error: any) => {
       toast.error(`Pipeline failure: ${error.message || "check information streams"}`);
     }
   });
+  const isSample = digest?.id?.includes('sample');
+  // Automated prompt for fresh data if only samples are available
+  useEffect(() => {
+    if (digest && isSample && !pipelineMutation.isPending && !isLoading) {
+      toast("Ready for Live Intelligence", {
+        description: "Viewing sample data. Run pipeline for real-time aggregation.",
+        action: {
+          label: "Execute",
+          onClick: () => pipelineMutation.mutate()
+        }
+      });
+    }
+  }, [digest, isSample]);
   const getBiasBadge = (score: number = 0) => {
     if (score < 0.2) return <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-50">High Consensus</Badge>;
     if (score < 0.4) return <Badge className="bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-50">Moderate Variance</Badge>;
@@ -64,7 +80,6 @@ export function HomePage() {
     if (Math.abs(diff) < 0.1) return <Minus className="h-3 w-3 text-slate-400" />;
     return diff > 0 ? <TrendingUp className="h-3 w-3 text-emerald-500" /> : <TrendingDown className="h-3 w-3 text-rose-500" />;
   };
-  const isSample = digest?.id?.includes('sample');
   return (
     <AppLayout container>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -109,18 +124,18 @@ export function HomePage() {
               <Button variant="ghost" size="sm" onClick={() => setShowTour(true)} className="text-[10px] font-bold uppercase tracking-widest">
                 <HelpCircle className="mr-2 h-4 w-4" /> Walkthrough
               </Button>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => digest && (window.location.href = `/api/digest/${digest.id}/csv`)} 
-                disabled={!digest} 
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => digest && (window.location.href = `/api/digest/${digest.id}/csv`)}
+                disabled={!digest}
                 className="border-2 font-bold uppercase text-[10px]"
               >
                 <FileDown className="mr-2 h-4 w-4" /> Download Intelligence
               </Button>
-              <Button 
-                onClick={() => pipelineMutation.mutate()} 
-                disabled={pipelineMutation.isPending} 
+              <Button
+                onClick={() => pipelineMutation.mutate()}
+                disabled={pipelineMutation.isPending}
                 className="bg-sky-600 hover:bg-sky-700 font-bold uppercase text-[10px] tracking-widest h-9 px-6"
               >
                 <Zap className={cn("mr-2 h-4 w-4", pipelineMutation.isPending && "animate-spin")} />
@@ -128,6 +143,14 @@ export function HomePage() {
               </Button>
             </div>
           </div>
+          {isError && (
+            <div className="mb-8 p-8 border-2 border-dashed border-rose-200 bg-rose-50 rounded-2xl flex flex-col items-center text-center">
+              <AlertTriangle className="h-10 w-10 text-rose-500 mb-4" />
+              <h4 className="text-lg font-serif font-bold italic">Network Synchronization Failed</h4>
+              <p className="text-sm text-rose-600 mt-2">The intelligence stream could not be reached. Verify your connection or registry configuration.</p>
+              <Button onClick={() => queryClient.invalidateQueries({ queryKey: ['digest'] })} variant="outline" className="mt-6 border-rose-200 text-rose-700 hover:bg-rose-100">Retry Synchronicity</Button>
+            </div>
+          )}
           {timelineData && timelineData.length > 1 && (
             <div className="mb-12">
               <ConsensusTimeline data={timelineData} />
@@ -179,16 +202,20 @@ export function HomePage() {
                                   {s}
                                 </Badge>
                               ))}
-                              {(cluster.sourceCount || 0) > 3 && <Badge variant="secondary" className="text-[8px] font-black uppercase bg-slate-50 dark:bg-slate-800 text-slate-400 border-none">+{cluster.sourceCount - 3}</Badge>}
                             </div>
                             {getBiasBadge(cluster.biasScore)}
                           </div>
                           <CardTitle className="text-2xl font-serif font-black leading-tight italic">{cluster.representativeTitle || "Synthesized Intelligence"}</CardTitle>
                         </CardHeader>
-                        <CardContent className="flex-grow">
-                          <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mb-6 italic font-serif line-clamp-3">
+                        <CardContent className="flex-grow space-y-6">
+                          <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed italic font-serif line-clamp-3">
                             "{cluster.neutralSummary}"
                           </p>
+                          {/* Mini Topology Grid */}
+                          <div className="space-y-2">
+                            <h5 className="text-[8px] font-black uppercase tracking-widest text-slate-400">Consensus Topology</h5>
+                            <ConsensusTopology sourceNames={cluster.sourceSpread} dispersion={cluster.biasScore} />
+                          </div>
                           <div className="flex gap-4">
                             <div className="flex-1 bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 text-center">
                               <span className="block text-[8px] font-black uppercase text-slate-400 mb-1">Mean Slant</span>
@@ -197,13 +224,13 @@ export function HomePage() {
                               </span>
                             </div>
                             <div className="flex-1 bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 text-center">
-                              <span className="block text-[8px] font-black uppercase text-slate-400 mb-1">Consensus</span>
-                              <span className="text-[10px] font-black text-slate-900 dark:text-slate-100">{((cluster.consensusFactor || 0) * 100).toFixed(0)}%</span>
+                              <span className="block text-[8px] font-black uppercase text-slate-400 mb-1">Impact</span>
+                              <span className="text-[10px] font-black text-slate-900 dark:text-slate-100">{(cluster.impactScore || 0).toFixed(1)}</span>
                             </div>
                           </div>
                         </CardContent>
                         <div className="mt-auto p-6 pt-0 flex items-center justify-between border-t border-slate-50 dark:border-slate-800">
-                          <Badge className="bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-[9px] font-black uppercase tracking-widest py-1">Priority: {(cluster.impactScore || 0).toFixed(1)}</Badge>
+                          <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">Topology v1.0</span>
                           <Button variant="ghost" size="sm" onClick={() => setSelectedCluster(cluster)} className="text-[10px] font-bold uppercase tracking-widest hover:text-sky-600">
                             <Fingerprint className="h-3 w-3 mr-2" /> Audit Trail
                           </Button>
@@ -216,10 +243,15 @@ export function HomePage() {
                 <div className="text-center py-32 border-2 border-dashed rounded-3xl bg-slate-50/50 dark:bg-slate-900/50">
                   <Newspaper className="mx-auto h-12 w-12 text-slate-300 mb-4" />
                   <h3 className="text-xl font-serif font-bold italic">Intelligence Gap Detected</h3>
-                  <p className="text-sm text-muted-foreground mt-2 mb-8">No localized digest exists for this date. Configure your streams to begin ingestion.</p>
-                  <Button asChild className="bg-sky-600 hover:bg-sky-700 font-bold uppercase text-[10px]">
-                    <Link to="/sources"><Rss className="mr-2 h-4 w-4" /> Registry Setup</Link>
-                  </Button>
+                  <p className="text-sm text-muted-foreground mt-2 mb-8">No localized digest exists for this date. Trigger the pipeline for fresh intelligence.</p>
+                  <div className="flex justify-center gap-4">
+                    <Button asChild variant="outline" className="font-bold uppercase text-[10px]">
+                      <Link to="/sources"><Rss className="mr-2 h-4 w-4" /> Source Setup</Link>
+                    </Button>
+                    <Button onClick={() => pipelineMutation.mutate()} disabled={pipelineMutation.isPending} className="bg-sky-600 font-bold uppercase text-[10px]">
+                      <Zap className="mr-2 h-4 w-4" /> Execute Ingestion
+                    </Button>
+                  </div>
                 </div>
               )}
             </TabsContent>

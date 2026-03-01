@@ -156,4 +156,27 @@
   .text-body {
     @apply text-base sm:text-lg text-muted-foreground leading-relaxed;
   }
+  /* Bias Topology Visuals */
+  .topology-grid {
+    background-image: 
+      repeating-linear-gradient(theme('colors.slate.200' / 10%) 0px, theme('colors.slate.200' / 10%) 1px, transparent 1px, transparent 20px),
+      repeating-linear-gradient(90deg, theme('colors.slate.200' / 10%) 0px, theme('colors.slate.200' / 10%) 1px, transparent 1px, transparent 20px);
+  }
+  .bias-aura {
+    position: absolute;
+    border-radius: 50%;
+    background: radial-gradient(circle, theme('colors.sky.500' / 10%) 0%, transparent 70%);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    width: calc(var(--dispersion) * 100%);
+    height: calc(var(--dispersion) * 100%);
+    transition: width 0.5s ease, height 0.5s ease;
+  }
+  .source-ping {
+    @apply absolute h-1.5 w-1.5 rounded-full bg-sky-500 shadow-[0_0_8px_theme('colors.sky.400')];
+    transform: translate(-50%, -50%);
+  }
+  .source-ping:hover {
+    @apply h-2.5 w-2.5 bg-sky-400 z-10;
+  }
 }

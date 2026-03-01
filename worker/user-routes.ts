@@ -2,10 +2,17 @@ import { Hono } from "hono";
 import type { Env } from './core-utils';
 import { NewsSourceEntity, DailyDigestEntity } from "./news-entities";
 import { ok, bad, notFound } from './core-utils';
-import { fetchAndParseRSS, clusterArticles, generateCSV, sendDigestEmail } from "./news-utils";
+import { fetchAndParseRSS, clusterArticles, generateCSV } from "./news-utils";
 import { format, parseISO, startOfDay, endOfDay, subDays } from "date-fns";
 import type { DailyDigest } from "@shared/news-types";
 export function userRoutes(app: Hono<{ Bindings: Env }>) {
+  // Global middleware to prevent caching of dynamic intelligence data
+  app.use('/api/digest/*', async (c, next) => {
+    await next();
+    c.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    c.header('Pragma', 'no-cache');
+    c.header('Expires', '0');
+  });
   app.get('/api/sources', async (c) => {
     await NewsSourceEntity.ensureSeed(c.env);
     const page = await NewsSourceEntity.list(c.env);
@@ -58,18 +65,25 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     return ok(c, series);
   });
   app.get('/api/digest/list', async (c) => {
-    await DailyDigestEntity.ensureSeed(c.env);
-    const dateParam = c.req.query('date');
-    const limit = parseInt(c.req.query('limit') || '50');
-    const { items } = await DailyDigestEntity.list(c.env, null, 1000);
-    let filtered = items;
-    if (dateParam) {
-      const targetDate = startOfDay(parseISO(dateParam)).getTime();
-      const nextDate = endOfDay(parseISO(dateParam)).getTime();
-      filtered = items.filter(d => d.generatedAt >= targetDate && d.generatedAt <= nextDate);
+    try {
+      await DailyDigestEntity.ensureSeed(c.env);
+      const dateParam = c.req.query('date');
+      const limit = parseInt(c.req.query('limit') || '50');
+      const { items } = await DailyDigestEntity.list(c.env, null, 1000);
+      let filtered = items;
+      if (dateParam) {
+        // Tolerant date parsing: floor to start of the day for consistent filtering
+        const parsedDate = parseISO(dateParam);
+        const targetStart = startOfDay(parsedDate).getTime();
+        const targetEnd = endOfDay(parsedDate).getTime();
+        filtered = items.filter(d => d.generatedAt >= targetStart && d.generatedAt <= targetEnd);
+      }
+      const sorted = filtered.sort((a, b) => b.generatedAt - a.generatedAt).slice(0, limit);
+      return ok(c, { items: sorted });
+    } catch (e) {
+      // Always return a valid structure even on failure to prevent frontend crashes
+      return ok(c, { items: [] });
     }
-    const sorted = filtered.sort((a, b) => b.generatedAt - a.generatedAt).slice(0, limit);
-    return ok(c, { items: sorted });
   });
   app.get('/api/digest/:id/csv', async (c) => {
     const entity = new DailyDigestEntity(c.env, c.req.param('id'));
@@ -79,7 +93,8 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     return new Response(csv, {
       headers: {
         'Content-Type': 'text/csv',
-        'Content-Disposition': `attachment; filename="veritas-lens-${digest.id}.csv"`
+        'Content-Disposition': `attachment; filename="veritas-lens-${digest.id}.csv"`,
+        'Cache-Control': 'no-store'
       }
     });
   });
@@ -89,15 +104,19 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     if (activeSources.length === 0) return bad(c, "No active sources configured");
     let allArticles = [];
     for (const src of activeSources) {
-      const articles = await fetchAndParseRSS(src.id, src.name, src.url);
-      allArticles.push(...articles);
+      try {
+        const articles = await fetchAndParseRSS(src.id, src.name, src.url);
+        allArticles.push(...articles);
+      } catch (e) {
+        console.error(`Failed to fetch from ${src.name}:`, e);
+      }
     }
     if (allArticles.length === 0) return bad(c, "No articles found in feeds");
     const uniqueArticles = allArticles.filter((v, i, a) => a.findIndex(t => (t.link === v.link)) === i);
     const clusters = await clusterArticles(uniqueArticles, c.env);
     const slants = clusters.map(cl => cl.meanSlant);
-    const mean = slants.reduce((a, b) => a + b, 0) / slants.length;
-    const variance = slants.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / slants.length;
+    const mean = slants.reduce((a, b) => a + b, 0) / (slants.length || 1);
+    const variance = slants.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (slants.length || 1);
     const stdDev = Math.sqrt(variance);
     const consensusScore = Math.max(0, Math.min(10, 10 - (stdDev * 10)));
     const digest: DailyDigest = {
