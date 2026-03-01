@@ -77,20 +77,7 @@ function updateWranglerJsonc() {
 }
 
 function runSetupCommands() {
-    const commands = [
-    "bun add fast-xml-parser@^4.4.1",
-    "bun add papaparse@^5.4.1",
-    "bun install fast-xml-parser",
-    "bun install papaparse@^5.4.1",
-    "bun install fast-xml-parser@^4.4.1",
-    "bun install recharts",
-    "bun install framer-motion",
-    "bun install lucide-react",
-    "bun install date-fns fast-xml-parser recharts framer-motion lucide-react papaparse",
-    "bun install lucide-react@latest",
-    "bun install date-fns@latest",
-    "bun install recharts@latest"
-];
+    const commands = [];
     
     if (commands.length === 0) {
         console.log('⊘ No setup commands to run');
