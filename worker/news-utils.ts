@@ -6,12 +6,12 @@ import type { Env } from "./core-utils";
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 ];
-const STOP_WORDS = new Set(['this', 'that', 'with', 'from', 'about', 'would', 'could', 'their', 'there', 'which', 'after', 'before', 'where', 'while', 'under', 'during', 'against']);
+const STOP_WORDS = new Set(['this', 'that', 'with', 'from', 'about', 'would', 'could', 'their', 'there', 'which', 'after', 'before', 'where', 'while', 'under', 'during', 'against', 'said', 'says', 'also', 'more', 'they', 'them']);
 function cleanText(text: string): string {
   if (!text) return "";
   return text
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1') // Extract CDATA
-    .replace(/<[^>]*>?/gm, '') // Strip HTML
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/<[^>]*>?/gm, '')
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&quot;/g, '"')
@@ -20,10 +20,43 @@ function cleanText(text: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
+function tokenize(text: string): Set<string> {
+  const words = text.toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter(t => t.length > 3 && !STOP_WORDS.has(t));
+  return new Set(words);
+}
+function extractProperNouns(text: string): Set<string> {
+  const propers = new Set<string>();
+  // Match words starting with uppercase (excluding sentence starts broadly)
+  const regex = /\b[A-Z][a-z]{1,}\b/g;
+  const matches = text.match(regex) || [];
+  const COMMON_STARTERS = new Set(['The', 'This', 'That', 'A', 'An', 'In', 'On', 'With', 'From']);
+  for (const match of matches) {
+    if (!COMMON_STARTERS.has(match)) {
+      propers.add(match.toLowerCase());
+    }
+  }
+  return propers;
+}
+function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  const intersection = new Set([...a].filter(x => b.has(x)));
+  const union = new Set([...a, ...b]);
+  return intersection.size / union.size;
+}
+function intersectionSize(a: Set<string>, b: Set<string>): number {
+  let count = 0;
+  for (const item of a) {
+    if (b.has(item)) count++;
+  }
+  return count;
+}
 async function fetchWithRetry(url: string, attempts: number = 2): Promise<Response | null> {
   for (let i = 0; i < attempts; i++) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s hard timeout
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
     try {
       const ua = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
       const res = await fetch(url, {
@@ -32,15 +65,11 @@ async function fetchWithRetry(url: string, attempts: number = 2): Promise<Respon
       });
       clearTimeout(timeoutId);
       if (res.ok) return res;
-      if (res.status >= 500) throw new Error(`Server Error ${res.status}`);
     } catch (e: any) {
       clearTimeout(timeoutId);
-      const msg = e.name === 'AbortError' ? 'Timeout (12s)' : (e.message || String(e));
-      console.warn(`[FETCH] Attempt ${i + 1} failed for ${url}:`, msg);
+      console.warn(`[FETCH] Attempt ${i + 1} failed for ${url}`);
     }
-    if (i < attempts - 1) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
+    if (i < attempts - 1) await new Promise(r => setTimeout(r, 1000));
   }
   return null;
 }
@@ -49,14 +78,8 @@ export async function fetchAndParseRSS(sourceId: string, sourceName: string, url
   if (!response) return [];
   try {
     const xml = await response.text();
-    const parser = new XMLParser({ 
-      ignoreAttributes: false, 
-      attributeNamePrefix: "@_",
-      cdataPropName: "__cdata",
-      processEntities: true
-    });
+    const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_" });
     const jsonObj = parser.parse(xml);
-    // Handle both RSS 2.0 <item> and Atom <entry>
     const items = jsonObj.rss?.channel?.item || jsonObj.feed?.entry || [];
     const normalizedItems = Array.isArray(items) ? items : [items];
     const cutoff = subHours(new Date(), 72);
@@ -65,9 +88,9 @@ export async function fetchAndParseRSS(sourceId: string, sourceName: string, url
         const pubDateStr = item.pubDate || item.updated || item.published || item['dc:date'] || new Date().toISOString();
         let pubDate;
         try { pubDate = new Date(pubDateStr); } catch { pubDate = new Date(); }
-        const rawTitle = item.title?.["__cdata"] || item.title?.["#text"] || item.title || "No Title";
+        const rawTitle = item.title?.["#text"] || item.title || "No Title";
         const title = cleanText(typeof rawTitle === 'string' ? rawTitle : "No Title");
-        const descRaw = item.description?.["__cdata"] || item.description || item.summary?.["__cdata"] || item.summary?.["#text"] || item.summary || "";
+        const descRaw = item.description || item.summary || "";
         const description = cleanText(typeof descRaw === 'string' ? descRaw : "");
         const link = item.link?.['@_href'] || (typeof item.link === 'string' ? item.link : item.link?.link || "");
         return {
@@ -77,83 +100,74 @@ export async function fetchAndParseRSS(sourceId: string, sourceName: string, url
           title,
           link,
           pubDate: pubDate.toISOString(),
-          description: description,
+          description,
           contentSnippet: description.substring(0, 400) || title
         };
       })
-      .filter(a => {
-        try { return isAfter(parseISO(a.pubDate), cutoff); }
-        catch { return true; }
-      });
+      .filter(a => isAfter(parseISO(a.pubDate), cutoff));
   } catch (e) {
     console.error(`[RSS] Parse error for ${sourceName}:`, e);
     return [];
   }
 }
-function getTokens(text: string): Set<string> {
-  return new Set(text.toLowerCase()
-    .replace(/[^\w\s]/g, '')
-    .split(/\s+/)
-    .filter(t => t.length > 3 && !STOP_WORDS.has(t)));
-}
-function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 || b.size === 0) return 0;
-  const intersection = new Set([...a].filter(x => b.has(x)));
-  const union = new Set([...a, ...b]);
-  return intersection.size / union.size;
-}
 export async function clusterArticles(articles: Article[], env: Env): Promise<NewsCluster[]> {
   const { items: sources } = await NewsSourceEntity.list(env);
   const sourceMap = new Map(sources.map(s => [s.id, s]));
-  const clusters: NewsCluster[] = [];
-  const tokenMap = new Map<string, Set<string>>();
-  articles.forEach(article => {
-    tokenMap.set(article.id, getTokens(article.title + " " + article.contentSnippet.substring(0, 150)));
+  // High-fidelity deduplication: Newest-first processing
+  const sortedArticles = [...articles].sort((a, b) => 
+    new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime()
+  );
+  if (sortedArticles.length === 0) return [];
+  const articleFeatures = new Map<string, { tokens: Set<string>, propers: Set<string> }>();
+  sortedArticles.forEach(a => {
+    articleFeatures.set(a.id, {
+      tokens: tokenize(a.title),
+      propers: extractProperNouns(a.title)
+    });
   });
-  const processedIds = new Set<string>();
+  const clusterGroups: Article[][] = [];
   const now = new Date();
-  for (const article of articles) {
-    if (processedIds.has(article.id)) continue;
-    const clusterItems = [article];
-    processedIds.add(article.id);
-    const tokensA = tokenMap.get(article.id)!;
-    for (const other of articles) {
-      if (processedIds.has(other.id)) continue;
-      const tokensB = tokenMap.get(other.id)!;
-      if (jaccardSimilarity(tokensA, tokensB) > 0.22) {
-        clusterItems.push(other);
-        processedIds.add(other.id);
+  for (const article of sortedArticles) {
+    const features = articleFeatures.get(article.id)!;
+    let found = false;
+    for (const group of clusterGroups) {
+      const representative = group[0];
+      const repFeatures = articleFeatures.get(representative.id)!;
+      const jaccard = jaccardSimilarity(features.tokens, repFeatures.tokens);
+      const commonPropers = intersectionSize(features.propers, repFeatures.propers);
+      // Match logic: Jaccard threshold OR Proper Noun overlap
+      if (jaccard >= 0.25 || commonPropers >= 1) {
+        group.push(article);
+        found = true;
+        break;
       }
     }
-    const uniqueSources = Array.from(new Set(clusterItems.map(a => a.sourceId)));
+    if (!found) {
+      clusterGroups.push([article]);
+    }
+  }
+  return clusterGroups.map(group => {
+    const representative = group[0];
+    const uniqueSources = Array.from(new Set(group.map(a => a.sourceId)));
     const sourceNames = uniqueSources.map(id => sourceMap.get(id)?.name || "Unknown");
-    const sourceCount = sourceNames.length;
-    let centroidArticle = clusterItems[0];
-    if (clusterItems.length > 2) {
-      let maxTotalSim = -1;
-      for (const candidate of clusterItems) {
-        let totalSim = 0;
-        const candTokens = tokenMap.get(candidate.id)!;
-        for (const peer of clusterItems) {
-          if (peer.id === candidate.id) continue;
-          totalSim += jaccardSimilarity(candTokens, tokenMap.get(peer.id)!);
-        }
-        if (totalSim > maxTotalSim) {
-          maxTotalSim = totalSim;
-          centroidArticle = candidate;
-        }
-      }
-    }
     let totalSlant = 0;
     uniqueSources.forEach(id => { totalSlant += sourceMap.get(id)?.slant || 0; });
     const meanSlant = totalSlant / (uniqueSources.length || 1);
+    const newestDate = group.reduce((max, a) => {
+      const d = parseISO(a.pubDate);
+      return d > max ? d : max;
+    }, new Date(0));
+    const hoursOld = Math.max(0, differenceInHours(now, newestDate));
+    const recencyScore = Math.exp(-hoursOld / 48);
+    const sourceCount = sourceNames.length;
+    // Consensus Factor calculation
     let avgSim = 1.0;
-    if (clusterItems.length > 1) {
+    if (group.length > 1) {
       let totalSim = 0;
       let pairs = 0;
-      for (let i = 0; i < clusterItems.length; i++) {
-        for (let j = i + 1; j < clusterItems.length; j++) {
-          totalSim += jaccardSimilarity(tokenMap.get(clusterItems[i].id)!, tokenMap.get(clusterItems[j].id)!);
+      for (let i = 0; i < group.length; i++) {
+        for (let j = i + 1; j < group.length; j++) {
+          totalSim += jaccardSimilarity(articleFeatures.get(group[i].id)!.tokens, articleFeatures.get(group[j].id)!.tokens);
           pairs++;
         }
       }
@@ -161,28 +175,21 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
     }
     const sourceDiversityWeight = Math.min(2.0, 1 + (sourceCount * 0.2));
     const consensusFactor = Math.min(1, avgSim * sourceDiversityWeight);
-    const newestDate = clusterItems.reduce((max, a) => {
-      const d = parseISO(a.pubDate);
-      return d > max ? d : max;
-    }, new Date(0));
-    const hoursOld = Math.max(0, differenceInHours(now, newestDate));
-    const recencyScore = Math.exp(-hoursOld / 36);
     const impactScore = (sourceCount * 0.8) + (recencyScore * 4.0) + (consensusFactor * 3.0);
-    clusters.push({
+    return {
       id: crypto.randomUUID(),
-      representativeTitle: centroidArticle.title,
-      articles: clusterItems,
+      representativeTitle: representative.title,
+      articles: group,
       sourceSpread: sourceNames,
       sourceCount,
-      neutralSummary: centroidArticle.contentSnippet,
+      neutralSummary: representative.contentSnippet || representative.title,
       impactScore,
       biasScore: Math.max(0, 1 - avgSim),
       clusterVariance: Math.max(0, 1 - consensusFactor),
       meanSlant,
       consensusFactor
-    });
-  }
-  return clusters.sort((a, b) => b.impactScore - a.impactScore).slice(0, 12);
+    };
+  }).sort((a, b) => b.impactScore - a.impactScore).slice(0, 15);
 }
 export function generateCSV(digest: any): string {
   const headers = ["Rank", "Title", "Mean Slant", "Consensus", "Source Count", "Link"];

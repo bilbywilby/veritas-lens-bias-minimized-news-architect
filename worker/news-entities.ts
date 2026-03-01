@@ -69,22 +69,21 @@ export class DailyDigestEntity extends IndexedEntity<DailyDigest> {
   static readonly initialState: DailyDigest = { id: "", generatedAt: 0, articleCount: 0, clusterCount: 0, clusters: [] };
   static async archiveToVault(env: Env, digest: DailyDigest): Promise<void> {
     if (!digest.clusters || digest.clusters.length === 0) return;
-    // Efficiency Optimization: Only store the primary representative article per cluster
-    // to stay within Cloudflare Worker sub-request limits (O(clusters) vs O(articles)).
-    const stories: VaultStory[] = digest.clusters.map(cluster => {
-      const primary = cluster.articles[0];
-      return {
-        id: crypto.randomUUID(),
-        clusterId: cluster.id,
-        sourceName: primary?.sourceName || "Unknown",
-        title: cluster.representativeTitle,
-        link: primary?.link || "",
-        slant: cluster.meanSlant,
-        bias: cluster.biasScore,
-        timestamp: digest.generatedAt
-      };
-    });
-    // Batch creation in groups if needed, though usually clusters < 50
+    const stories: VaultStory[] = digest.clusters
+      .filter(c => c.articles && c.articles.length > 0)
+      .map(cluster => {
+        const primary = cluster.articles[0];
+        return {
+          id: crypto.randomUUID(),
+          clusterId: cluster.id,
+          sourceName: primary.sourceName || "Unknown",
+          title: cluster.representativeTitle,
+          link: primary.link || "",
+          slant: cluster.meanSlant,
+          bias: cluster.biasScore,
+          timestamp: digest.generatedAt // Precise mapping to cycle time
+        };
+      });
     await Promise.all(stories.map(s => StoryVaultEntity.create(env, s)));
   }
   static seedData: DailyDigest[] = [

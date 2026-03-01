@@ -25,8 +25,13 @@ export function HomePage() {
   const { data: digest, isLoading } = useQuery<DailyDigest | null>({
     queryKey: ['digest', formattedDate],
     queryFn: async () => {
-      const res = await api<any>(`/api/digest/list?date=${formattedDate}&limit=1`);
-      return res?.items?.[0] || null;
+      try {
+        const res = await api<any>(`/api/digest/list?date=${formattedDate}&limit=1`);
+        return res?.items?.[0] || null;
+      } catch (e) {
+        console.error("[HOME PAGE] Digest fetch failure", e);
+        return null;
+      }
     }
   });
   const { data: sysStats } = useQuery<SystemState>({
@@ -39,8 +44,8 @@ export function HomePage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['digest'] });
       queryClient.invalidateQueries({ queryKey: ['system-stats'] });
-      toast.success("Consensus Synchronized", {
-        description: `Synthesized top ${data.clusterCount} intelligence clusters.`
+      toast.success("Intelligence Synchronized", {
+        description: `Synthesized ${data.clusterCount} tight clusters via Propers-Match algorithm.`
       });
     },
     onError: (err: any) => toast.error("Sync Failure", { description: err.message })
@@ -48,11 +53,10 @@ export function HomePage() {
   const sortedClusters = digest?.clusters
     ? [...digest.clusters].sort((a, b) => b.impactScore - a.impactScore).slice(0, 10)
     : [];
-  const rawArticles: Article[] = digest?.clusters.flatMap(c => c.articles) || [];
+  const rawArticles: Article[] = digest?.clusters?.flatMap(c => c.articles || []) || [];
   return (
     <AppLayout container>
       <div className="space-y-12">
-        {/* Newspaper Style Masthead */}
         <div className="border-t-4 border-b-2 border-slate-900 dark:border-slate-100 py-10 mb-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-8">
             <div className="hidden lg:block w-72">
@@ -81,7 +85,6 @@ export function HomePage() {
             </div>
           </div>
         </div>
-        {/* Dashboard Actions */}
         <div className="flex flex-col sm:flex-row justify-between items-center gap-6 border-b pb-8 border-dashed">
           <div className="flex items-center gap-4">
             <Popover>
@@ -96,7 +99,7 @@ export function HomePage() {
             </Popover>
             <div className="hidden sm:block h-8 w-px bg-slate-200" />
             <div className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
-              Top 10 Global Clusters
+              Top 10 High-Density Clusters
             </div>
           </div>
           <Button
@@ -107,17 +110,16 @@ export function HomePage() {
             {pipelineMutation.isPending ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin mr-3" />
-                Normalizing Information...
+                Deduplicating Information...
               </>
             ) : (
               <>
                 <RefreshCcw className="h-4 w-4 mr-3" />
-                Synchronize Information Streams
+                Synchronize Intelligence Protocol
               </>
             )}
           </Button>
         </div>
-        {/* Intelligence Grid */}
         <div className="min-h-[500px]">
           {isLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -137,17 +139,18 @@ export function HomePage() {
                   />
                 ))}
               </div>
-              {/* Forensic Intelligence Log */}
               <div className="space-y-6">
                 <div className="flex items-center gap-3 border-b-2 border-slate-900 dark:border-slate-100 pb-4">
                   <Database className="h-6 w-6 text-sky-600" />
                   <h2 className="text-3xl font-serif font-bold italic tracking-tight">Forensic Intelligence Log</h2>
-                  <Badge variant="outline" className="ml-auto text-[10px] font-black uppercase">{rawArticles.length} STREAMS ANALYZED</Badge>
+                  <Badge variant="outline" className="ml-auto text-[10px] font-black uppercase">
+                    {rawArticles.length} STREAMS CAPTURED
+                  </Badge>
                 </div>
                 <div className="bg-white dark:bg-slate-900 rounded-xl border-2 shadow-sm overflow-hidden">
                   <Table>
                     <TableHeader>
-                      <TableRow className="bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-50">
+                      <TableRow className="bg-slate-50 dark:bg-slate-800/50">
                         <TableHead className="text-[10px] font-black uppercase tracking-widest w-40">Source Stream</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest">Headline & Context</TableHead>
                         <TableHead className="text-[10px] font-black uppercase tracking-widest text-right w-32">Captured</TableHead>
@@ -157,24 +160,24 @@ export function HomePage() {
                       {rawArticles.slice(0, 30).map((article) => (
                         <TableRow key={article.id} className="group border-b last:border-0 hover:bg-slate-50/30 transition-colors">
                           <TableCell className="align-top py-5">
-                            <Badge variant="secondary" className="text-[9px] font-black uppercase tracking-tight bg-slate-100 text-slate-500 border-none">
-                              {article.sourceName}
+                            <Badge variant="secondary" className="text-[9px] font-black uppercase tracking-tight bg-slate-100 text-slate-500">
+                              {article.sourceName || "Internal"}
                             </Badge>
                           </TableCell>
                           <TableCell className="py-5">
                             <div className="space-y-1.5">
-                              <a href={article.link} target="_blank" rel="noreferrer" className="font-bold text-sm text-slate-900 dark:text-slate-100 hover:text-sky-700 inline-flex items-center gap-1.5 group/link transition-colors">
+                              <a href={article.link} target="_blank" rel="noreferrer" className="font-bold text-sm text-slate-900 dark:text-slate-100 hover:text-sky-700 inline-flex items-center gap-1.5 group/link">
                                 {article.title}
-                                <ExternalLink className="h-3 w-3 opacity-0 group-hover/link:opacity-100 transition-opacity" />
+                                <ExternalLink className="h-3 w-3 opacity-0 group-hover/link:opacity-100" />
                               </a>
                               <p className="text-xs text-muted-foreground line-clamp-2 italic font-serif leading-relaxed pr-8">
-                                {article.contentSnippet}
+                                {article.contentSnippet || "No forensic context available."}
                               </p>
                             </div>
                           </TableCell>
                           <TableCell className="align-top py-5 text-right">
                             <span className="text-[10px] font-black uppercase text-slate-400">
-                              {format(new Date(article.pubDate), 'MMM d, HH:mm')}
+                              {article.pubDate ? format(new Date(article.pubDate), 'MMM d, HH:mm') : 'N/A'}
                             </span>
                           </TableCell>
                         </TableRow>
@@ -193,9 +196,9 @@ export function HomePage() {
           ) : (
             <div className="text-center py-40 border-2 border-dashed rounded-3xl bg-slate-50 dark:bg-slate-950/50">
               <Newspaper className="h-16 w-16 mx-auto text-slate-300 mb-6" />
-              <h3 className="text-3xl font-serif italic text-slate-400 mb-4">No Archived Intelligence localized</h3>
-              <p className="text-sm text-muted-foreground mb-8 max-w-md mx-auto leading-relaxed">
-                The Edge Story Vault requires a fresh synchronization cycle to generate today's Top 10 consensus reporting clusters.
+              <h3 className="text-3xl font-serif italic text-slate-400 mb-4">No Intelligence Localized</h3>
+              <p className="text-sm text-muted-foreground mb-8 max-w-md mx-auto">
+                The Story Vault requires a fresh synchronization cycle to generate today's high-density reporting clusters.
               </p>
               <Button
                 onClick={() => pipelineMutation.mutate()}
