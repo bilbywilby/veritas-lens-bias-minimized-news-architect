@@ -78,7 +78,7 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
   const sourceMap = new Map(sources.map(s => [s.id, s]));
   const clusters: NewsCluster[] = [];
   const tokenMap = new Map<string, Set<string>>();
-  articles.forEach(article => tokenMap.set(article.id, getTokens(article.title)));
+  articles.forEach(article => tokenMap.set(article.id, getTokens(article.title + " " + article.contentSnippet.substring(0, 100))));
   const processedIds = new Set<string>();
   const now = new Date();
   for (const article of articles) {
@@ -89,7 +89,7 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
     for (const other of articles) {
       if (processedIds.has(other.id)) continue;
       const tokensB = tokenMap.get(other.id)!;
-      if (jaccardSimilarity(tokensA, tokensB) > 0.22) {
+      if (jaccardSimilarity(tokensA, tokensB) > 0.18) {
         clusterItems.push(other);
         processedIds.add(other.id);
       }
@@ -97,6 +97,23 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
     const uniqueSources = Array.from(new Set(clusterItems.map(a => a.sourceId)));
     const sourceNames = uniqueSources.map(id => sourceMap.get(id)?.name || "Unknown");
     const sourceCount = sourceNames.length;
+    // Centroid Identification: Select article most central to the cluster
+    let centroidArticle = clusterItems[0];
+    if (clusterItems.length > 2) {
+      let maxTotalSim = -1;
+      for (const candidate of clusterItems) {
+        let totalSim = 0;
+        const candTokens = tokenMap.get(candidate.id)!;
+        for (const peer of clusterItems) {
+          if (peer.id === candidate.id) continue;
+          totalSim += jaccardSimilarity(candTokens, tokenMap.get(peer.id)!);
+        }
+        if (totalSim > maxTotalSim) {
+          maxTotalSim = totalSim;
+          centroidArticle = candidate;
+        }
+      }
+    }
     let totalSlant = 0;
     uniqueSources.forEach(id => {
       totalSlant += sourceMap.get(id)?.slant || 0;
@@ -114,24 +131,25 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
       }
       avgSim = totalSim / pairs;
     }
-    const consensusFactor = Math.min(1, avgSim * (1 + (sourceCount * 0.1)));
+    const sourceDiversityWeight = Math.min(1.5, 1 + (sourceCount * 0.15));
+    const consensusFactor = Math.min(1, avgSim * sourceDiversityWeight);
     const newestDate = clusterItems.reduce((max, a) => {
       const d = parseISO(a.pubDate);
       return d > max ? d : max;
     }, new Date(0));
     const hoursOld = Math.max(0, differenceInHours(now, newestDate));
-    const recencyScore = Math.exp(-hoursOld / 72);
-    const impactScore = (sourceCount * 0.5) + (recencyScore * 2.5) + (consensusFactor * 1.5);
+    const recencyScore = Math.exp(-hoursOld / 48);
+    const impactScore = (sourceCount * 0.6) + (recencyScore * 3.0) + (consensusFactor * 2.0);
     clusters.push({
       id: crypto.randomUUID(),
-      representativeTitle: article.title,
+      representativeTitle: centroidArticle.title,
       articles: clusterItems,
       sourceSpread: sourceNames,
       sourceCount,
-      neutralSummary: clusterItems[0].contentSnippet,
+      neutralSummary: centroidArticle.contentSnippet,
       impactScore,
       biasScore: 1 - avgSim,
-      clusterVariance: 1 - consensusFactor,
+      clusterVariance: Math.max(0, 1 - consensusFactor),
       meanSlant,
       consensusFactor
     });

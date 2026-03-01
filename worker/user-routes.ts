@@ -3,7 +3,7 @@ import type { Env } from './core-utils';
 import { NewsSourceEntity, DailyDigestEntity } from "./news-entities";
 import { ok, bad, notFound } from './core-utils';
 import { fetchAndParseRSS, clusterArticles, generateCSV, sendDigestEmail } from "./news-utils";
-import { format, parseISO, startOfDay, endOfDay } from "date-fns";
+import { format, parseISO, startOfDay, endOfDay, subDays } from "date-fns";
 import type { DailyDigest } from "@shared/news-types";
 export function userRoutes(app: Hono<{ Bindings: Env }>) {
   app.get('/api/sources', async (c) => {
@@ -39,11 +39,24 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
   app.get('/api/digest/latest', async (c) => {
     const { items } = await DailyDigestEntity.list(c.env, null, 100);
     const sorted = items.sort((a, b) => b.generatedAt - a.generatedAt);
-    c.header('Cache-Control', 'public, s-maxage=300');
     return ok(c, sorted[0] || null);
   });
+  app.get('/api/analytics/consensus', async (c) => {
+    const { items } = await DailyDigestEntity.list(c.env, null, 1000);
+    const fourteenDaysAgo = subDays(new Date(), 14).getTime();
+    const series = items
+      .filter(d => d.generatedAt >= fourteenDaysAgo)
+      .sort((a, b) => a.generatedAt - b.generatedAt)
+      .map(d => ({
+        date: format(new Date(d.generatedAt), 'MMM dd'),
+        score: d.consensusScore || 0,
+        articles: d.articleCount,
+        clusters: d.clusterCount
+      }));
+    return ok(c, series);
+  });
   app.get('/api/digest/list', async (c) => {
-    const dateParam = c.req.query('date'); 
+    const dateParam = c.req.query('date');
     const limit = parseInt(c.req.query('limit') || '50');
     const { items } = await DailyDigestEntity.list(c.env, null, 1000);
     let filtered = items;
@@ -53,7 +66,6 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       filtered = items.filter(d => d.generatedAt >= targetDate && d.generatedAt <= nextDate);
     }
     const sorted = filtered.sort((a, b) => b.generatedAt - a.generatedAt).slice(0, limit);
-    c.header('Cache-Control', 'public, s-maxage=300');
     return ok(c, { items: sorted });
   });
   app.get('/api/digest/:id/csv', async (c) => {
@@ -68,19 +80,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       }
     });
   });
-  app.post('/api/digest/:id/send', async (c) => {
-    const { email } = (await c.req.json()) as { email?: string };
-    if (!email || !email.includes('@')) return bad(c, 'Valid email address required');
-    const entity = new DailyDigestEntity(c.env, c.req.param('id'));
-    if (!await entity.exists()) return notFound(c);
-    const digest = await entity.getState();
-    const delivery = await sendDigestEmail(digest, email);
-    if (!delivery.success) return bad(c, `Email delivery failed: ${delivery.error}`);
-    return ok(c, { message: `Digest dispatched to ${email}` });
-  });
   app.post('/api/pipeline/run', async (c) => {
-    const dryRun = c.req.query('dryRun') === 'true';
-    const emailTo = c.req.query('email');
     const sourcesPage = await NewsSourceEntity.list(c.env);
     const activeSources = sourcesPage.items.filter(s => s.active);
     if (activeSources.length === 0) return bad(c, "No active sources configured");
@@ -90,15 +90,14 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       allArticles.push(...articles);
     }
     if (allArticles.length === 0) return bad(c, "No articles found in feeds");
-    const seen = new Set<string>();
-    const uniqueArticles = allArticles.filter(a => {
-      const hash = `${a.link}-${a.pubDate}`;
-      if (seen.has(hash)) return false;
-      seen.add(hash);
-      return true;
-    });
+    const uniqueArticles = allArticles.filter((v, i, a) => a.findIndex(t => (t.link === v.link)) === i);
     const clusters = await clusterArticles(uniqueArticles, c.env);
-    const consensusScore = 7.5 + (Math.random() * 2);
+    // Global Consensus Calculation: 10 - (StDev of Slants across clusters)
+    const slants = clusters.map(cl => cl.meanSlant);
+    const mean = slants.reduce((a, b) => a + b, 0) / slants.length;
+    const variance = slants.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / slants.length;
+    const stdDev = Math.sqrt(variance);
+    const consensusScore = Math.max(0, Math.min(10, 10 - (stdDev * 10)));
     const digest: DailyDigest = {
       id: format(new Date(), 'yyyy-MM-dd-HHmm'),
       generatedAt: Date.now(),
@@ -107,12 +106,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       clusters,
       consensusScore
     };
-    if (!dryRun) {
-      await DailyDigestEntity.create(c.env, digest);
-      if (emailTo && emailTo.includes('@')) {
-        await sendDigestEmail(digest, emailTo);
-      }
-    }
+    await DailyDigestEntity.create(c.env, digest);
     return ok(c, digest);
   });
 }
