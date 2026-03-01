@@ -2,8 +2,9 @@ import { Hono } from "hono";
 import type { Env } from './core-utils';
 import { NewsSourceEntity, DailyDigestEntity } from "./news-entities";
 import { ok, bad, notFound } from './core-utils';
-import { fetchAndParseRSS, clusterArticles, generateCSV } from "./news-utils";
+import { fetchAndParseRSS, clusterArticles, generateCSV, sendDigestEmail } from "./news-utils";
 import { format, parseISO, startOfDay, endOfDay } from "date-fns";
+import type { DailyDigest } from "@shared/news-types";
 export function userRoutes(app: Hono<{ Bindings: Env }>) {
   app.get('/api/sources', async (c) => {
     await NewsSourceEntity.ensureSeed(c.env);
@@ -13,7 +14,6 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
   app.post('/api/sources', async (c) => {
     const { name, url } = (await c.req.json()) as { name?: string; url?: string };
     if (!name?.trim() || !url?.trim()) return bad(c, 'name and url required');
-    // Basic validation
     const isValid = await NewsSourceEntity.validateFeed(url);
     if (!isValid) return bad(c, 'Invalid RSS feed endpoint');
     const source = await NewsSourceEntity.create(c.env, {
@@ -67,8 +67,19 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       }
     });
   });
+  app.post('/api/digest/:id/send', async (c) => {
+    const { email } = (await c.req.json()) as { email?: string };
+    if (!email || !email.includes('@')) return bad(c, 'Valid email address required');
+    const entity = new DailyDigestEntity(c.env, c.req.param('id'));
+    if (!await entity.exists()) return notFound(c);
+    const digest = await entity.getState();
+    const delivery = await sendDigestEmail(digest, email);
+    if (!delivery.success) return bad(c, `Email delivery failed: ${delivery.error}`);
+    return ok(c, { message: `Digest dispatched to ${email}` });
+  });
   app.post('/api/pipeline/run', async (c) => {
     const dryRun = c.req.query('dryRun') === 'true';
+    const emailTo = c.req.query('email');
     const sourcesPage = await NewsSourceEntity.list(c.env);
     const activeSources = sourcesPage.items.filter(s => s.active);
     if (activeSources.length === 0) return bad(c, "No active sources configured");
@@ -78,7 +89,6 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       allArticles.push(...articles);
     }
     if (allArticles.length === 0) return bad(c, "No articles found in feeds");
-    // Hash-based unique story dedup
     const seen = new Set<string>();
     const uniqueArticles = allArticles.filter(a => {
       const hash = `${a.link}-${a.pubDate}`;
@@ -87,7 +97,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       return true;
     });
     const clusters = clusterArticles(uniqueArticles);
-    const consensusScore = 7.5 + (Math.random() * 2); // Algorithmic proxy
+    const consensusScore = 7.5 + (Math.random() * 2);
     const digest: DailyDigest = {
       id: format(new Date(), 'yyyy-MM-dd-HHmm'),
       generatedAt: Date.now(),
@@ -95,9 +105,12 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       clusterCount: clusters.length,
       clusters,
       consensusScore
-    } as any;
+    };
     if (!dryRun) {
       await DailyDigestEntity.create(c.env, digest);
+      if (emailTo && emailTo.includes('@')) {
+        await sendDigestEmail(digest, emailTo);
+      }
     }
     return ok(c, digest);
   });

@@ -98,7 +98,6 @@ export function clusterArticles(articles: Article[]): NewsCluster[] {
     }
     const sourceSpread = Array.from(new Set(clusterItems.map(a => a.sourceName)));
     const sourceCount = sourceSpread.length;
-    // Bias Score: 1 - Average Pairwise Similarity
     let avgSim = 1.0;
     if (clusterItems.length > 1) {
       let totalSim = 0;
@@ -112,14 +111,12 @@ export function clusterArticles(articles: Article[]): NewsCluster[] {
       avgSim = totalSim / pairs;
     }
     const biasScore = Math.max(0, 1 - avgSim);
-    // Recency Score: 72h exponential decay
     const newestDate = clusterItems.reduce((max, a) => {
       const d = parseISO(a.pubDate);
       return d > max ? d : max;
     }, new Date(0));
     const hoursOld = Math.max(0, differenceInHours(now, newestDate));
     const recencyScore = Math.exp(-hoursOld / 72);
-    // Ranking Logic
     const impactScore = (sourceCount * 0.4) + (recencyScore * 3.0) + (article.title.length / 100 * 0.2);
     clusters.push({
       id: crypto.randomUUID(),
@@ -130,7 +127,7 @@ export function clusterArticles(articles: Article[]): NewsCluster[] {
       neutralSummary: clusterItems[0].contentSnippet,
       impactScore,
       biasScore,
-      clusterVariance: Math.random() * 0.3 // Mock variance for now
+      clusterVariance: Math.random() * 0.3
     });
   }
   return clusters
@@ -151,4 +148,42 @@ export function generateCSV(digest: DailyDigest): string {
   return [headers, ...rows]
     .map(r => r.map(cell => `"${cell}"`).join(","))
     .join("\n");
+}
+export async function sendDigestEmail(digest: DailyDigest, recipient: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const csvContent = generateCSV(digest);
+    const encoder = new TextEncoder();
+    const data = encoder.encode(csvContent);
+    const base64Csv = btoa(String.fromCharCode(...new Uint8Array(data)));
+    const summary = digest.clusters.map((c, i) => `${i + 1}. ${c.representativeTitle}`).join("\n");
+    const body = `Verification Report Architected by Veritas Lens.\n\nToday's Key Intelligence Clusters:\n${summary}\n\nA detailed CSV report is attached for your verification.`;
+    const payload = {
+      personalizations: [{ to: [{ email: recipient }] }],
+      from: { email: "no-reply@veritas-lens.ai", name: "Veritas Lens Architect" },
+      subject: `Truth-First Digest: ${digest.clusterCount} Intelligence Clusters Found`,
+      content: [
+        { type: "text/plain", value: body }
+      ],
+      attachments: [
+        {
+          content: base64Csv,
+          filename: `veritas-report-${digest.id}.csv`,
+          type: "text/csv",
+          disposition: "attachment"
+        }
+      ]
+    };
+    const response = await fetch("https://api.mailchannels.net/tx/v1/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (response.ok) return { success: true };
+    const errText = await response.text();
+    console.error("[EMAIL DELIVERY] MailChannels failed:", errText);
+    return { success: false, error: errText };
+  } catch (e: any) {
+    console.error("[EMAIL DELIVERY] Error:", e);
+    return { success: false, error: e.message };
+  }
 }
