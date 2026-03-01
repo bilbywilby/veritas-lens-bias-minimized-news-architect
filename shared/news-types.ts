@@ -3,8 +3,7 @@ export interface NewsSource {
   name: string;
   url: string;
   active: boolean;
-  weight: number; // 1-5 reliability scale
-  slant: number; // -1 (Left) to +1 (Right)
+  weight: number;
 }
 export interface Article {
   id: string;
@@ -20,43 +19,14 @@ export interface NewsCluster {
   id: string;
   representativeTitle: string;
   articles: Article[];
-  sourceSpread: string[]; // List of unique source names
-  sourceCount: number;
+  sourceSpread: string[]; // List of source names
   neutralSummary: string;
-  tags: string[]; // AI-generated intelligence categories
-  impactScore: number; // Algorithmic priority score
-  biasScore: number; // 0-1 scale of divergence
-  clusterVariance: number; // variance in reporting length/detail
-  meanSlant: number; // Weighted average of source slants
-  consensusFactor: number; // 0-1, inverse of dispersion
+  impactScore: number;
 }
 export interface DailyDigest {
-  id: string; // Typically YYYY-MM-DD-HHmm
+  id: string; // YYYY-MM-DD
   generatedAt: number;
   articleCount: number;
   clusterCount: number;
   clusters: NewsCluster[];
-  consensusScore?: number;
-}
-export interface SystemState {
-  id: string;
-  lastRun: number;
-  totalArticles: number;
-  sourceCount: number;
-}
-export interface VaultStory {
-  id: string;
-  clusterId: string;
-  sourceName: string;
-  title: string;
-  link: string;
-  slant: number;
-  bias: number;
-  tags?: string[];
-  timestamp: number;
-}
-export interface ApiResponse<T = unknown> {
-  success: boolean;
-  data?: T;
-  error?: string;
 }

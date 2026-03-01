@@ -1,138 +1,145 @@
-// Home page of the app.
-// Currently a demo placeholder "please wait" screen.
-// Replace this file with your actual app UI. Do not delete it to use some other file as homepage. Simply replace the entire contents of this file.
-
-import { useEffect, useMemo, useState } from 'react'
-import { Sparkles } from 'lucide-react'
-
-import { ThemeToggle } from '@/components/ThemeToggle'
-import { HAS_TEMPLATE_DEMO, TemplateDemo } from '@/components/TemplateDemo'
-import { Button } from '@/components/ui/button'
-import { Toaster, toast } from '@/components/ui/sonner'
-
-function formatDuration(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000))
-  const m = Math.floor(total / 60)
-  const s = total % 60
-  return `${m}:${s.toString().padStart(2, '0')}`
-}
-
+import React from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Newspaper, Zap, FileJson, Share2, Users } from 'lucide-react';
+import { AppLayout } from '@/components/layout/AppLayout';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { api } from '@/lib/api-client';
+import { toast } from 'sonner';
+import type { DailyDigest } from '@shared/news-types';
+import { format } from 'date-fns';
 export function HomePage() {
-  const [coins, setCoins] = useState(0)
-  const [isRunning, setIsRunning] = useState(false)
-  const [startedAt, setStartedAt] = useState<number | null>(null)
-  const [elapsedMs, setElapsedMs] = useState(0)
-
-  useEffect(() => {
-    if (!isRunning || startedAt === null) return
-
-    const t = setInterval(() => {
-      setElapsedMs(Date.now() - startedAt)
-    }, 250)
-
-    return () => clearInterval(t)
-  }, [isRunning, startedAt])
-
-  const formatted = useMemo(() => formatDuration(elapsedMs), [elapsedMs])
-
-  const onPleaseWait = () => {
-    setCoins((c) => c + 1)
-
-    if (!isRunning) {
-      // Resume from the current elapsed time
-      setStartedAt(Date.now() - elapsedMs)
-      setIsRunning(true)
-      toast.success('Building your app…', {
-        description: "Hang tight — we're setting everything up.",
-      })
-      return
-    }
-
-    setIsRunning(false)
-    toast.info('Still working…', {
-      description: 'You can come back in a moment.',
-    })
-  }
-
-  const onReset = () => {
-    setCoins(0)
-    setIsRunning(false)
-    setStartedAt(null)
-    setElapsedMs(0)
-    toast('Reset complete')
-  }
-
-  const onAddCoin = () => {
-    setCoins((c) => c + 1)
-    toast('Coin added')
-  }
-
+  const queryClient = useQueryClient();
+  const { data: digest, isLoading } = useQuery<DailyDigest | null>({
+    queryKey: ['latest-digest'],
+    queryFn: () => api<DailyDigest | null>('/api/digest/latest')
+  });
+  const pipelineMutation = useMutation({
+    mutationFn: () => api<DailyDigest>('/api/pipeline/run', { method: 'POST' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['latest-digest'] });
+      toast.success("Intelligence pipeline complete. New digest generated.");
+    },
+    onError: () => toast.error("Pipeline failure. Check source feeds.")
+  });
+  const exportCSV = () => {
+    if (!digest) return;
+    const headers = ["Title", "Sources", "Impact", "Link"];
+    const rows = digest.clusters.map(c => [
+      `"${c.representativeTitle.replace(/"/g, '""')}"`,
+      `"${c.sourceSpread.join(', ')}"`,
+      c.impactScore,
+      c.articles[0]?.link
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].map(e => e.join(",")).join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `veritas-lens-${digest.id}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-background text-foreground p-4 overflow-hidden relative">
-      <ThemeToggle />
-      <div className="absolute inset-0 bg-gradient-rainbow opacity-10 dark:opacity-20 pointer-events-none" />
-
-      <div className="text-center space-y-8 relative z-10 animate-fade-in w-full">
-        <div className="flex justify-center">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-primary flex items-center justify-center shadow-primary floating">
-            <Sparkles className="w-8 h-8 text-white rotating" />
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <h1 className="text-5xl md:text-7xl font-display font-bold text-balance leading-tight">
-            Creating your <span className="text-gradient">app</span>
-          </h1>
-          <p className="text-lg md:text-xl text-muted-foreground max-w-xl mx-auto text-pretty">
-            Your application would be ready soon.
+    <AppLayout container>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
+        <div>
+          <h2 className="text-3xl font-serif font-bold text-slate-900 italic">The Daily Intelligence</h2>
+          <p className="text-muted-foreground font-medium">
+            {digest ? format(new Date(digest.generatedAt), "EEEE, MMMM do, yyyy") : "Verifying Global Information Streams..."}
           </p>
         </div>
-
-        {HAS_TEMPLATE_DEMO ? (
-          <div className="max-w-5xl mx-auto text-left">
-            <TemplateDemo />
-          </div>
-        ) : (
-          <>
-            <div className="flex justify-center gap-4">
-              <Button
-                size="lg"
-                onClick={onPleaseWait}
-                className="btn-gradient px-8 py-4 text-lg font-semibold hover:-translate-y-0.5 transition-all duration-200"
-                aria-live="polite"
-              >
-                Please Wait
-              </Button>
-            </div>
-
-            <div className="flex items-center justify-center gap-6 text-sm text-muted-foreground">
-              <div>
-                Time elapsed:{' '}
-                <span className="font-medium tabular-nums text-foreground">{formatted}</span>
-              </div>
-              <div>
-                Coins:{' '}
-                <span className="font-medium tabular-nums text-foreground">{coins}</span>
-              </div>
-            </div>
-
-            <div className="flex justify-center gap-2">
-              <Button variant="outline" size="sm" onClick={onReset}>
-                Reset
-              </Button>
-              <Button variant="outline" size="sm" onClick={onAddCoin}>
-                Add Coin
-              </Button>
-            </div>
-          </>
-        )}
+        <div className="flex gap-3">
+          <Button variant="outline" onClick={exportCSV} disabled={!digest}>
+            <FileJson className="mr-2 h-4 w-4" /> Export Report
+          </Button>
+          <Button onClick={() => pipelineMutation.mutate()} disabled={pipelineMutation.isPending} className="bg-sky-600 hover:bg-sky-700">
+            <Zap className={`mr-2 h-4 w-4 ${pipelineMutation.isPending ? 'animate-pulse' : ''}`} />
+            {pipelineMutation.isPending ? "Neutralizing Bias..." : "Regenerate Digest"}
+          </Button>
+        </div>
       </div>
-
-      <footer className="absolute bottom-8 text-center text-muted-foreground/80">
-        <p>Powered by Cloudflare</p>
-      </footer>
-
-      <Toaster richColors closeButton />
-    </div>
-  )
+      {digest && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+          <Card className="bg-white border-l-4 border-l-sky-500 shadow-sm">
+            <CardHeader className="pb-2">
+              <CardDescription className="uppercase tracking-tighter text-[10px] font-bold">Articles Scraped</CardDescription>
+              <CardTitle className="text-4xl font-serif">{digest.articleCount}</CardTitle>
+            </CardHeader>
+          </Card>
+          <Card className="bg-white border-l-4 border-l-indigo-500 shadow-sm">
+            <CardHeader className="pb-2">
+              <CardDescription className="uppercase tracking-tighter text-[10px] font-bold">Clusters Formed</CardDescription>
+              <CardTitle className="text-4xl font-serif">{digest.clusterCount}</CardTitle>
+            </CardHeader>
+          </Card>
+          <Card className="bg-white border-l-4 border-l-emerald-500 shadow-sm">
+            <CardHeader className="pb-2">
+              <CardDescription className="uppercase tracking-tighter text-[10px] font-bold">Consensus Index</CardDescription>
+              <CardTitle className="text-4xl font-serif">84%</CardTitle>
+            </CardHeader>
+          </Card>
+        </div>
+      )}
+      {isLoading ? (
+        <div className="space-y-6">
+          {[1, 2, 3].map(i => <div key={i} className="h-48 w-full bg-slate-200 animate-pulse rounded-xl" />)}
+        </div>
+      ) : digest ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {digest.clusters.map((cluster) => (
+            <Card key={cluster.id} className="group hover:shadow-md transition-all border-slate-200 overflow-hidden bg-white">
+              <CardHeader className="pb-4">
+                <div className="flex justify-between items-start mb-3">
+                  <div className="flex gap-2">
+                    {cluster.sourceSpread.map(s => (
+                      <Badge key={s} variant="secondary" className="text-[10px] font-bold bg-slate-100 text-slate-700">
+                        {s}
+                      </Badge>
+                    ))}
+                  </div>
+                  <Badge className="bg-sky-50 text-sky-700 border-sky-100 hover:bg-sky-50">
+                    Density: {cluster.impactScore}
+                  </Badge>
+                </div>
+                <CardTitle className="text-xl font-serif leading-snug group-hover:text-sky-800 transition-colors">
+                  {cluster.representativeTitle}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-slate-600 leading-relaxed mb-6 italic border-l-2 border-slate-200 pl-4">
+                  {cluster.neutralSummary}
+                </p>
+                <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                  <div className="flex -space-x-2 overflow-hidden">
+                    {cluster.sourceSpread.map((s, i) => (
+                      <div key={i} className="inline-block h-6 w-6 rounded-full ring-2 ring-white bg-slate-200 flex items-center justify-center text-[10px] font-bold">
+                        {s[0]}
+                      </div>
+                    ))}
+                  </div>
+                  <Button variant="ghost" size="sm" asChild className="text-sky-600 hover:text-sky-700">
+                    <a href={cluster.articles[0]?.link} target="_blank" rel="noreferrer">
+                      View Citations <Share2 className="ml-2 h-3 w-3" />
+                    </a>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-20 bg-white rounded-2xl border-2 border-dashed border-slate-200">
+          <Newspaper className="mx-auto h-12 w-12 text-slate-300 mb-4" />
+          <h3 className="text-xl font-serif font-bold text-slate-900">No Intelligence Available</h3>
+          <p className="text-slate-500 mb-8 max-w-sm mx-auto">Launch the pipeline to ingest and analyze multi-source reporting.</p>
+          <Button onClick={() => pipelineMutation.mutate()} className="bg-sky-600">
+            Initial Scrape
+          </Button>
+        </div>
+      )}
+    </AppLayout>
+  );
 }
