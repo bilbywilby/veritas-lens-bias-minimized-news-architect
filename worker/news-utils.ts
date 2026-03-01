@@ -27,7 +27,6 @@ async function fetchWithRetry(url: string, attempts: number = 3): Promise<Respon
   return null;
 }
 export async function fetchAndParseRSS(sourceId: string, sourceName: string, url: string): Promise<Article[]> {
-  // Add safety timeout to prevent hanging the whole pipeline
   const response = await fetchWithRetry(url).catch(err => {
     console.error(`[RSS] Critical fetch error for ${sourceName}:`, err);
     return null;
@@ -39,7 +38,7 @@ export async function fetchAndParseRSS(sourceId: string, sourceName: string, url
     const jsonObj = parser.parse(xml);
     const items = jsonObj.rss?.channel?.item || jsonObj.feed?.entry || [];
     const normalizedItems = Array.isArray(items) ? items : [items];
-    const cutoff = subHours(new Date(), 72); 
+    const cutoff = subHours(new Date(), 72);
     return normalizedItems
       .map((item: any) => {
         const pubDateStr = item.pubDate || item.updated || item['dc:date'] || new Date().toISOString();
@@ -160,6 +159,7 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
       consensusFactor
     });
   }
+  // Return top 15 clusters to ensure UI has enough pool for its "Top 10" display
   return clusters.sort((a, b) => b.impactScore - a.impactScore).slice(0, 15);
 }
 export function generateCSV(digest: DailyDigest): string {
@@ -173,35 +173,4 @@ export function generateCSV(digest: DailyDigest): string {
     c.articles[0]?.link || ""
   ]);
   return [headers, ...rows].map(r => r.map(cell => `"${cell}"`).join(",")).join("\n");
-}
-function utf8ToBase64(str: string): string {
-  const bytes = new TextEncoder().encode(str);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-export async function sendDigestEmail(digest: DailyDigest, recipient: string): Promise<{ success: boolean; error?: string }> {
-  try {
-    const csvContent = generateCSV(digest);
-    const base64Csv = utf8ToBase64(csvContent);
-    const summary = digest.clusters.map((c, i) => `${i + 1}. ${c.representativeTitle} (${(c.consensusFactor*100).toFixed(0)}% Consensus)`).join("\n");
-    const body = `Veritas Lens: Truth-First Intelligence Briefing.\n\nToday's Key Clusters:\n${summary}\n\nAttached CSV contains the full reporting topology.`;
-    const payload = {
-      personalizations: [{ to: [{ email: recipient }] }],
-      from: { email: "intelligence@veritas-lens.ai", name: "Veritas Lens Architect" },
-      subject: `Morning Intelligence: ${digest.clusterCount} Consensus Hubs Found`,
-      content: [{ type: "text/plain", value: body }],
-      attachments: [{ content: base64Csv, filename: `veritas-report-${digest.id}.csv`, type: "text/csv", disposition: "attachment" }]
-    };
-    const response = await fetch("https://api.mailchannels.net/tx/v1/send", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    return response.ok ? { success: true } : { success: false, error: await response.text() };
-  } catch (e: any) {
-    return { success: false, error: e.message };
-  }
 }

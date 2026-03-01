@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Newspaper, Zap, FileDown, Calendar as CalendarIcon, Network, LayoutList, Fingerprint, TrendingUp, TrendingDown, Minus, HelpCircle, Rss, AlertTriangle, Loader2, BarChart3, Activity } from 'lucide-react';
+import { Newspaper, Zap, FileDown, Calendar as CalendarIcon, Network, LayoutList, Fingerprint, TrendingUp, TrendingDown, Minus, HelpCircle, Rss, AlertTriangle, Loader2, BarChart3, Activity, RefreshCcw } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -49,10 +49,17 @@ export function HomePage() {
   const pipelineMutation = useMutation({
     mutationFn: () => api<DailyDigest>(`/api/pipeline/run`, { method: 'POST' }),
     onSuccess: (data) => {
+      // Hard invalidation for full cache purge
       queryClient.invalidateQueries({ queryKey: ['digest'] });
       queryClient.invalidateQueries({ queryKey: ['system-stats'] });
-      toast.success(`Consensus Synthesis Complete`, {
-        description: `${data.clusterCount} clusters identified.`
+      const count = Math.min(data.clusterCount, 10);
+      toast.success(`Reloaded: ${count}/10 clusters`, {
+        description: `Consensus synthesis complete at the edge.`
+      });
+    },
+    onError: (err: any) => {
+      toast.error("Pipeline Execution Failure", {
+        description: err.message
       });
     }
   });
@@ -65,11 +72,13 @@ export function HomePage() {
       setIsExporting(false);
     }, 800);
   }, [digest]);
-  // Newspaper Hierarchy Logic
-  const sortedClusters = digest?.clusters ? [...digest.clusters].sort((a, b) => b.impactScore - a.impactScore) : [];
+  // Newspaper Hierarchy Logic constrained to Top 10
+  const sortedClusters = digest?.clusters 
+    ? [...digest.clusters].sort((a, b) => b.impactScore - a.impactScore).slice(0, 10) 
+    : [];
   const primaryHeadline = sortedClusters[0];
-  const subHeadlines = sortedClusters.slice(1, 3);
-  const tertiaryHeadlines = sortedClusters.slice(3);
+  const subHeadlines = sortedClusters.slice(1, 4); // Increased count for subHeadlines to fill layout
+  const tertiaryHeadlines = sortedClusters.slice(4);
   return (
     <AppLayout container>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -119,9 +128,13 @@ export function HomePage() {
               <Button variant="outline" size="sm" onClick={handleExport} disabled={!digest} className="font-bold border-2 uppercase text-[10px]">
                 <FileDown className="mr-2 h-4 w-4" /> Export Report
               </Button>
-              <Button onClick={() => pipelineMutation.mutate()} disabled={pipelineMutation.isPending} className="bg-slate-900 hover:bg-slate-800 text-white font-bold uppercase text-[10px] px-6">
-                {pipelineMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4 mr-2" />}
-                Execute Pipeline
+              <Button 
+                onClick={() => pipelineMutation.mutate()} 
+                disabled={pipelineMutation.isPending} 
+                className="bg-slate-900 hover:bg-slate-800 text-white font-bold uppercase text-[10px] px-6"
+              >
+                {pipelineMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCcw className="h-4 w-4 mr-2" />}
+                Reload Top 10 Consensus Clusters
               </Button>
             </div>
           </div>
@@ -142,7 +155,6 @@ export function HomePage() {
               <TabsTrigger value="topology" className="font-bold text-[10px] uppercase tracking-widest">Information Topology</TabsTrigger>
             </TabsList>
             <TabsContent value="broadsheet" className="space-y-12">
-              {/* Headline Hierarchy Section */}
               {digest && sortedClusters.length > 0 ? (
                 <div className="grid grid-cols-1 lg:grid-cols-4 gap-10 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800">
                   {/* Left Column: Primary Headline (2 cols) */}
@@ -152,7 +164,7 @@ export function HomePage() {
                     </div>
                     {primaryHeadline && (
                       <div className="space-y-6">
-                        <h3 className="text-4xl md:text-5xl font-serif font-black italic leading-tight group-hover:text-sky-700 transition-colors cursor-pointer" onClick={() => setSelectedCluster(primaryHeadline)}>
+                        <h3 className="text-4xl md:text-5xl font-serif font-black italic leading-tight hover:text-sky-700 transition-colors cursor-pointer" onClick={() => setSelectedCluster(primaryHeadline)}>
                           {primaryHeadline.representativeTitle}
                         </h3>
                         <p className="text-lg font-serif italic text-slate-600 dark:text-slate-400 leading-relaxed border-l-4 border-sky-500 pl-6 py-2">
@@ -167,18 +179,21 @@ export function HomePage() {
                       </div>
                     )}
                   </div>
-                  {/* Middle Column: Secondary Headlines */}
+                  {/* Middle Column: Secondary Headlines with Topologies */}
                   <div className="lg:col-span-1 space-y-8 lg:pl-10">
                      <div className="border-b border-slate-200 dark:border-slate-800 pb-2 mb-4">
                         <span className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">Regional Briefings</span>
                      </div>
                      {subHeadlines.map(h => (
                        <div key={h.id} className="space-y-3 group cursor-pointer" onClick={() => setSelectedCluster(h)}>
-                         <Badge className="bg-slate-50 text-slate-400 text-[8px] uppercase">{h.sourceCount} Sources</Badge>
+                         <div className="flex items-center justify-between">
+                            <Badge className="bg-slate-50 text-slate-400 text-[8px] uppercase">{h.sourceCount} Sources</Badge>
+                            <span className="text-[9px] font-black uppercase text-emerald-600">{(h.consensusFactor * 100).toFixed(0)}% Consensus</span>
+                         </div>
                          <h4 className="text-xl font-serif font-bold italic leading-snug group-hover:text-sky-600 transition-colors">
                            {h.representativeTitle}
                          </h4>
-                         <p className="text-xs text-muted-foreground line-clamp-2">{h.neutralSummary}</p>
+                         <ConsensusTopology sourceNames={h.sourceSpread} dispersion={h.biasScore} className="h-20" />
                        </div>
                      ))}
                   </div>
@@ -189,7 +204,7 @@ export function HomePage() {
                         <BarChart3 className="h-3 w-3 mr-2 text-sky-600" /> Consensus Feed
                       </h5>
                       <div className="space-y-6">
-                        {tertiaryHeadlines.slice(0, 5).map(h => (
+                        {tertiaryHeadlines.map(h => (
                           <div key={h.id} className="border-b border-slate-100 dark:border-slate-800 pb-4 last:border-0 cursor-pointer hover:bg-slate-100/50" onClick={() => setSelectedCluster(h)}>
                             <p className="text-[9px] font-black uppercase text-emerald-600 mb-1">{(h.consensusFactor * 100).toFixed(0)}% Agree</p>
                             <h6 className="font-serif font-bold text-sm leading-tight italic">{h.representativeTitle}</h6>
@@ -203,7 +218,7 @@ export function HomePage() {
                 <div className="text-center py-40 bg-white dark:bg-slate-950 border-2 border-dashed rounded-3xl">
                    <Newspaper className="h-16 w-16 mx-auto text-slate-200 mb-6" />
                    <h3 className="text-2xl font-serif italic text-slate-400">Archival Records Required</h3>
-                   <p className="text-sm text-muted-foreground mt-2 max-w-xs mx-auto italic">Synchronize with information streams to generate today's broadsheet.</p>
+                   <p className="text-sm text-muted-foreground mt-2 max-w-xs mx-auto italic">Synchronize with information streams to generate today's Top 10 consensus.</p>
                 </div>
               )}
             </TabsContent>

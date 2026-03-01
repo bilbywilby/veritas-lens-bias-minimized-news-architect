@@ -5,7 +5,6 @@ import { ok, bad, notFound } from './core-utils';
 import { fetchAndParseRSS, clusterArticles, generateCSV } from "./news-utils";
 import { format, parseISO, startOfDay, endOfDay } from "date-fns";
 import type { DailyDigest } from "@shared/news-types";
-// Module-level guard to prevent multiple registrations on the same Hono instance
 let routesRegistered = false;
 export function userRoutes(app: Hono<{ Bindings: Env }>) {
   if (routesRegistered) {
@@ -66,8 +65,8 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       await SystemStateEntity.ensureSeed(c.env);
       const state = await new SystemStateEntity(c.env, "global").getState();
       const { items: digests } = await DailyDigestEntity.list(c.env, null, 100);
-      const avgConsensus = digests.length > 0 
-        ? digests.reduce((acc, d) => acc + (d.consensusScore || 0), 0) / digests.length 
+      const avgConsensus = digests.length > 0
+        ? digests.reduce((acc, d) => acc + (d.consensusScore || 0), 0) / digests.length
         : 0;
       return ok(c, { ...state, avgConsensus });
     } catch (e: any) {
@@ -150,7 +149,9 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
         catch (e) { return []; }
       }));
       const allArticles = fetchResults.flat();
-      if (allArticles.length === 0) return bad(c, "Null result from RSS clusters.");
+      if (allArticles.length === 0) {
+        return bad(c, "Null result from RSS clusters. (0 articles found)");
+      }
       const uniqueArticles = allArticles.filter((v, i, a) => a.findIndex(t => (t.link === v.link)) === i);
       const clusters = await clusterArticles(uniqueArticles, c.env);
       const digest: DailyDigest = {
@@ -163,9 +164,12 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       };
       await DailyDigestEntity.create(c.env, digest);
       await SystemStateEntity.updateMetrics(c.env, uniqueArticles.length, activeSources.length);
+      // Prevent Edge-level caching for pipeline results
+      c.header('Cache-Control', 'no-store, no-cache, must-revalidate');
       return ok(c, digest);
     } catch (e: any) {
       console.error("[PIPELINE RUN] Critical Edge Failure:", e.message);
+      // Return partial metadata if possible for UI feedback
       return bad(c, `Edge Execution Failure: ${e.message}`);
     }
   });
