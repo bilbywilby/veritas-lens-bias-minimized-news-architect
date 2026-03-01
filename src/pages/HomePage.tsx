@@ -1,15 +1,12 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Newspaper, Zap, FileDown, Calendar as CalendarIcon, Mail, Network, LayoutList, Fingerprint, TrendingUp, TrendingDown, Minus, HelpCircle, Rss } from 'lucide-react';
+import { Newspaper, Zap, FileDown, Calendar as CalendarIcon, Network, LayoutList, Fingerprint, TrendingUp, TrendingDown, Minus, HelpCircle, Rss } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ConsensusMap } from '@/components/ConsensusMap';
 import { ConsensusTimeline } from '@/components/ConsensusTimeline';
@@ -30,11 +27,19 @@ export function HomePage() {
   const formattedDate = date ? format(date, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
   const { data: digest, isLoading } = useQuery<DailyDigest | null>({
     queryKey: ['digest', formattedDate],
-    queryFn: () => api<any>(`/api/digest/list?date=${formattedDate}&limit=1`).then(res => res?.items?.[0] || null)
+    queryFn: async () => {
+      try {
+        const res = await api<any>(`/api/digest/list?date=${formattedDate}&limit=1`);
+        return res?.items?.[0] || null;
+      } catch (err) {
+        console.error("Failed to fetch digest:", err);
+        return null;
+      }
+    }
   });
   const { data: timelineData } = useQuery<any[]>({
     queryKey: ['analytics-consensus'],
-    queryFn: () => api<any[]>('/api/analytics/consensus')
+    queryFn: () => api<any[]>('/api/analytics/consensus').catch(() => [])
   });
   const pipelineMutation = useMutation({
     mutationFn: () => api<DailyDigest>(`/api/pipeline/run`, { method: 'POST' }),
@@ -43,7 +48,9 @@ export function HomePage() {
       queryClient.invalidateQueries({ queryKey: ['analytics-consensus'] });
       toast.success("Intelligence cycle complete");
     },
-    onError: () => toast.error("Pipeline failure: check information streams")
+    onError: (error: any) => {
+      toast.error(`Pipeline failure: ${error.message || "check information streams"}`);
+    }
   });
   const getBiasBadge = (score: number = 0) => {
     if (score < 0.2) return <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-50">High Consensus</Badge>;
@@ -62,6 +69,7 @@ export function HomePage() {
     <AppLayout container>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="py-8 md:py-10 lg:py-12">
+          {/* Masthead */}
           <div className="border-y-2 border-slate-900 dark:border-slate-100 py-6 mb-12 relative overflow-hidden">
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 relative z-10">
               <div className="hidden md:flex items-center gap-2">
@@ -70,7 +78,7 @@ export function HomePage() {
                 </div>
                 {isSample && <Badge variant="outline" className="text-[8px] border-amber-200 bg-amber-50 text-amber-600 font-black uppercase tracking-tighter">Sample Record</Badge>}
               </div>
-              <h2 className="text-6xl md:text-7xl font-serif font-black text-slate-900 dark:text-slate-50 italic tracking-tighter text-center uppercase">
+              <h2 className="text-5xl md:text-7xl font-serif font-black text-slate-900 dark:text-slate-50 italic tracking-tighter text-center uppercase">
                 Veritas Lens
               </h2>
               <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
@@ -78,6 +86,7 @@ export function HomePage() {
               </div>
             </div>
           </div>
+          {/* Controls Bar */}
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-10 gap-6">
             <div className="flex items-center gap-4">
               <Popover>
@@ -100,10 +109,20 @@ export function HomePage() {
               <Button variant="ghost" size="sm" onClick={() => setShowTour(true)} className="text-[10px] font-bold uppercase tracking-widest">
                 <HelpCircle className="mr-2 h-4 w-4" /> Walkthrough
               </Button>
-              <Button variant="outline" size="sm" onClick={() => digest && (window.location.href = `/api/digest/${digest.id}/csv`)} disabled={!digest} className="border-2 font-bold uppercase text-[10px]">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => digest && (window.location.href = `/api/digest/${digest.id}/csv`)} 
+                disabled={!digest} 
+                className="border-2 font-bold uppercase text-[10px]"
+              >
                 <FileDown className="mr-2 h-4 w-4" /> Download Intelligence
               </Button>
-              <Button onClick={() => pipelineMutation.mutate()} disabled={pipelineMutation.isPending} className="bg-sky-600 hover:bg-sky-700 font-bold uppercase text-[10px] tracking-widest h-9 px-6">
+              <Button 
+                onClick={() => pipelineMutation.mutate()} 
+                disabled={pipelineMutation.isPending} 
+                className="bg-sky-600 hover:bg-sky-700 font-bold uppercase text-[10px] tracking-widest h-9 px-6"
+              >
                 <Zap className={cn("mr-2 h-4 w-4", pipelineMutation.isPending && "animate-spin")} />
                 {pipelineMutation.isPending ? "Neutralizing..." : "Execute Pipeline"}
               </Button>
@@ -116,16 +135,20 @@ export function HomePage() {
           )}
           <Tabs defaultValue="briefing" className="space-y-8">
             <TabsList className="grid w-full max-w-sm grid-cols-2 bg-slate-100 dark:bg-slate-900 h-10 p-1">
-              <TabsTrigger value="briefing" className="font-bold uppercase text-[10px] tracking-widest"><LayoutList className="mr-2 h-3 w-3"/> Morning Briefing</TabsTrigger>
-              <TabsTrigger value="topology" className="font-bold uppercase text-[10px] tracking-widest"><Network className="mr-2 h-3 w-3"/> Information Topology</TabsTrigger>
+              <TabsTrigger value="briefing" className="font-bold uppercase text-[10px] tracking-widest">
+                <LayoutList className="mr-2 h-3 w-3"/> Morning Briefing
+              </TabsTrigger>
+              <TabsTrigger value="topology" className="font-bold uppercase text-[10px] tracking-widest">
+                <Network className="mr-2 h-3 w-3"/> Information Topology
+              </TabsTrigger>
             </TabsList>
             <TabsContent value="briefing" className="space-y-8 animate-in fade-in duration-500">
               {digest && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {[
-                    { label: 'Articles Processed', val: digest.articleCount, color: 'text-sky-600', trend: null },
-                    { label: 'Neutral Clusters', val: digest.clusterCount, color: 'text-indigo-600', trend: null },
-                    { label: 'Consensus Index', val: `${(digest.consensusScore ?? 8.5).toFixed(1)}/10`, color: 'text-emerald-600', trend: digest.consensusScore }
+                    { label: 'Articles Processed', val: digest.articleCount || 0, color: 'text-sky-600', trend: null },
+                    { label: 'Neutral Clusters', val: digest.clusterCount || 0, color: 'text-indigo-600', trend: null },
+                    { label: 'Consensus Index', val: `${(digest.consensusScore ?? 0).toFixed(1)}/10`, color: 'text-emerald-600', trend: digest.consensusScore }
                   ].map((stat, i) => (
                     <Card key={i} className="border-none bg-white dark:bg-slate-900 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
                       <CardHeader className="pb-4">
@@ -141,9 +164,9 @@ export function HomePage() {
               )}
               {isLoading ? (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  {[1, 2, 3, 4].map(i => <div key={i} className="h-72 w-full bg-slate-100 dark:bg-slate-900 animate-pulse rounded-2xl" />)}
+                  {[1, 2, 3, 4].map(i => <div key={i} className="h-72 w-full bg-slate-100 dark:bg-slate-800 animate-pulse rounded-2xl" />)}
                 </div>
-              ) : digest ? (
+              ) : digest && digest.clusters?.length > 0 ? (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                   {digest.clusters.map((cluster) => (
                     <motion.div key={cluster.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
@@ -151,36 +174,36 @@ export function HomePage() {
                         <CardHeader>
                           <div className="flex justify-between items-start mb-4">
                             <div className="flex flex-wrap gap-1">
-                              {cluster.sourceSpread.slice(0, 3).map(s => (
+                              {(cluster.sourceSpread || []).slice(0, 3).map(s => (
                                 <Badge key={s} variant="secondary" className="text-[8px] font-black uppercase bg-slate-50 dark:bg-slate-800 text-slate-400 border-none">
                                   {s}
                                 </Badge>
                               ))}
-                              {cluster.sourceCount > 3 && <Badge variant="secondary" className="text-[8px] font-black uppercase bg-slate-50 dark:bg-slate-800 text-slate-400 border-none">+{cluster.sourceCount - 3}</Badge>}
+                              {(cluster.sourceCount || 0) > 3 && <Badge variant="secondary" className="text-[8px] font-black uppercase bg-slate-50 dark:bg-slate-800 text-slate-400 border-none">+{cluster.sourceCount - 3}</Badge>}
                             </div>
                             {getBiasBadge(cluster.biasScore)}
                           </div>
-                          <CardTitle className="text-2xl font-serif font-black leading-tight italic">{cluster.representativeTitle}</CardTitle>
+                          <CardTitle className="text-2xl font-serif font-black leading-tight italic">{cluster.representativeTitle || "Synthesized Intelligence"}</CardTitle>
                         </CardHeader>
                         <CardContent className="flex-grow">
-                          <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mb-6 italic font-serif">
-                            "{cluster.neutralSummary.substring(0, 200)}..."
+                          <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mb-6 italic font-serif line-clamp-3">
+                            "{cluster.neutralSummary}"
                           </p>
                           <div className="flex gap-4">
                             <div className="flex-1 bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 text-center">
                               <span className="block text-[8px] font-black uppercase text-slate-400 mb-1">Mean Slant</span>
-                              <span className={cn("text-[10px] font-black uppercase", cluster.meanSlant < -0.1 ? 'text-sky-600' : cluster.meanSlant > 0.1 ? 'text-rose-600' : 'text-slate-900 dark:text-slate-100')}>
-                                {cluster.meanSlant < -0.1 ? 'Progressive' : cluster.meanSlant > 0.1 ? 'Conservative' : 'Neutral'}
+                              <span className={cn("text-[10px] font-black uppercase", (cluster.meanSlant || 0) < -0.1 ? 'text-sky-600' : (cluster.meanSlant || 0) > 0.1 ? 'text-rose-600' : 'text-slate-900 dark:text-slate-100')}>
+                                {(cluster.meanSlant || 0) < -0.1 ? 'Progressive' : (cluster.meanSlant || 0) > 0.1 ? 'Conservative' : 'Neutral'}
                               </span>
                             </div>
                             <div className="flex-1 bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 text-center">
                               <span className="block text-[8px] font-black uppercase text-slate-400 mb-1">Consensus</span>
-                              <span className="text-[10px] font-black text-slate-900 dark:text-slate-100">{(cluster.consensusFactor * 100).toFixed(0)}%</span>
+                              <span className="text-[10px] font-black text-slate-900 dark:text-slate-100">{((cluster.consensusFactor || 0) * 100).toFixed(0)}%</span>
                             </div>
                           </div>
                         </CardContent>
                         <div className="mt-auto p-6 pt-0 flex items-center justify-between border-t border-slate-50 dark:border-slate-800">
-                          <Badge className="bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-[9px] font-black uppercase tracking-widest py-1">Priority: {cluster.impactScore.toFixed(1)}</Badge>
+                          <Badge className="bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-[9px] font-black uppercase tracking-widest py-1">Priority: {(cluster.impactScore || 0).toFixed(1)}</Badge>
                           <Button variant="ghost" size="sm" onClick={() => setSelectedCluster(cluster)} className="text-[10px] font-bold uppercase tracking-widest hover:text-sky-600">
                             <Fingerprint className="h-3 w-3 mr-2" /> Audit Trail
                           </Button>
@@ -201,11 +224,11 @@ export function HomePage() {
               )}
             </TabsContent>
             <TabsContent value="topology" className="animate-in fade-in duration-500">
-              {digest ? (
+              {digest && digest.clusters?.length > 0 ? (
                 <ConsensusMap clusters={digest.clusters} height={600} />
               ) : (
                 <div className="h-[600px] flex items-center justify-center border-2 border-dashed rounded-2xl bg-slate-50 dark:bg-slate-900">
-                  <p className="text-muted-foreground italic">Topology visualization requires a localized intelligence digest.</p>
+                  <p className="text-muted-foreground italic font-serif">Topology visualization requires a localized intelligence digest.</p>
                 </div>
               )}
             </TabsContent>
