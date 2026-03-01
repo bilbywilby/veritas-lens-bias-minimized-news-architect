@@ -6,7 +6,6 @@ import type { Env } from "./core-utils";
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 ];
-// Expanded stop words to neutralize common journalistic filler
 const STOP_WORDS = new Set(['this', 'that', 'with', 'from', 'about', 'would', 'could', 'their', 'there', 'which', 'after', 'before', 'where', 'while', 'under', 'during', 'against']);
 async function fetchWithRetry(url: string, attempts: number = 3): Promise<Response | null> {
   for (let i = 0; i < attempts; i++) {
@@ -17,8 +16,15 @@ async function fetchWithRetry(url: string, attempts: number = 3): Promise<Respon
         signal: AbortSignal.timeout(8000)
       });
       if (res.ok) return res;
-    } catch (e) {
-      console.warn(`[FETCH] Retry ${i+1} failed for ${url}:`, e);
+      if (res.status >= 500) throw new Error(`Server Error ${res.status}`);
+    } catch (e: any) {
+      const msg = e.message || String(e);
+      // Harden against TLS/SSL certificate noise
+      if (msg.includes("certificate") || msg.includes("TLS") || msg.includes("ssl")) {
+        console.warn(`[FETCH] SSL/TLS Warning for ${url}: ${msg}. Skipping source to maintain pipeline stability.`);
+        return null; 
+      }
+      console.warn(`[FETCH] Attempt ${i + 1} failed for ${url}:`, msg);
     }
     if (i < attempts - 1) {
       await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
@@ -27,10 +33,7 @@ async function fetchWithRetry(url: string, attempts: number = 3): Promise<Respon
   return null;
 }
 export async function fetchAndParseRSS(sourceId: string, sourceName: string, url: string): Promise<Article[]> {
-  const response = await fetchWithRetry(url).catch(err => {
-    console.error(`[RSS] Critical fetch error for ${sourceName}:`, err);
-    return null;
-  });
+  const response = await fetchWithRetry(url);
   if (!response) return [];
   try {
     const xml = await response.text();
@@ -159,7 +162,6 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
       consensusFactor
     });
   }
-  // Return top 15 clusters to ensure UI has enough pool for its "Top 10" display
   return clusters.sort((a, b) => b.impactScore - a.impactScore).slice(0, 15);
 }
 export function generateCSV(digest: DailyDigest): string {
