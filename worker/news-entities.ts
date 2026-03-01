@@ -101,6 +101,7 @@ export class DailyDigestEntity extends IndexedEntity<DailyDigest> {
           sourceSpread: ["Reuters", "Associated Press", "BBC World", "Al Jazeera"],
           sourceCount: 4,
           neutralSummary: "Major central banks across the G7 have issued coordinated statements indicating a pause in interest rate adjustments.",
+          tags: ["Economics", "Global Markets", "Central Banking"],
           impactScore: 9.8,
           biasScore: 0.05,
           clusterVariance: 0.1,

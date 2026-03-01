@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Newspaper, Calendar as CalendarIcon, RefreshCcw, Loader2, Info, Activity, Fingerprint, Database, ExternalLink } from 'lucide-react';
+import { Newspaper, Calendar as CalendarIcon, RefreshCcw, Loader2, Info, Activity, Database, ExternalLink, ShieldAlert, CheckCircle2, Sliders } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -59,7 +60,8 @@ export function HomePage() {
   return (
     <AppLayout container>
       <div className="space-y-12">
-        <div className="border-t-4 border-b-2 border-slate-900 dark:border-slate-100 py-10 mb-8">
+        {/* Masthead */}
+        <div className="border-t-4 border-b-2 border-slate-900 dark:border-slate-100 py-10">
           <div className="flex flex-col md:flex-row justify-between items-center gap-8">
             <div className="hidden lg:block w-72">
               <SystemPulse stats={sysStats} onSync={() => queryClient.invalidateQueries({ queryKey: ['system-stats'] })} />
@@ -87,6 +89,63 @@ export function HomePage() {
             </div>
           </div>
         </div>
+        {/* Executive intelligence Briefing Section */}
+        <section className="bg-white dark:bg-slate-900 border-2 border-slate-900 dark:border-slate-50 p-8 md:p-12 shadow-[8px_8px_0px_rgba(0,0,0,0.05)]">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+            <div className="space-y-6">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="h-5 w-5 text-sky-600" />
+                <span className="text-[11px] font-black uppercase tracking-[0.3em] text-sky-600">Executive Summary</span>
+              </div>
+              <h2 className="text-4xl md:text-5xl font-serif font-bold italic leading-tight tracking-tight">
+                The Executive Intelligence Briefing
+              </h2>
+              <p className="text-lg text-slate-600 dark:text-slate-400 font-serif italic leading-relaxed">
+                Veritas Lens operates a decentralized intelligence pipeline at the network edge, providing decision-makers with bias-minimized reporting through three core protocols:
+              </p>
+              <ul className="space-y-4">
+                {[
+                  "Autonomous Cross-Source Verification",
+                  "Algorithmic Bias Neutralization",
+                  "Evidence-Based Consensus Mapping"
+                ].map((item, i) => (
+                  <li key={i} className="flex items-center gap-3 text-sm font-black uppercase tracking-widest text-slate-900 dark:text-slate-100">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800 p-8 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 flex flex-col justify-center gap-6">
+              <div className="space-y-2">
+                <h3 className="font-serif font-bold text-xl">Operational Readiness</h3>
+                <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                  Trigger the neutralization cycle to aggregate and deduplicate information across your configured publisher streams.
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-4">
+                <Button 
+                  onClick={() => pipelineMutation.mutate()} 
+                  disabled={pipelineMutation.isPending}
+                  className="flex-1 bg-sky-600 hover:bg-sky-700 font-black uppercase text-[10px] tracking-widest h-12"
+                >
+                  {pipelineMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <RefreshCcw className="h-4 w-4 mr-2" />
+                  )}
+                  Run Synchronization Protocol
+                </Button>
+                <Button variant="outline" className="flex-1 font-black uppercase text-[10px] tracking-widest border-2 h-12" asChild>
+                  <Link to="/sources">
+                    <Sliders className="h-4 w-4 mr-2" /> Manage Intelligence Streams
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
+        {/* Dashboard Controls */}
         <div className="flex flex-col sm:flex-row justify-between items-center gap-6 border-b pb-8 border-dashed">
           <div className="flex items-center gap-4">
             <Popover>
@@ -104,24 +163,11 @@ export function HomePage() {
               AI-Enhanced High-Density Clusters
             </div>
           </div>
-          <Button
-            onClick={() => pipelineMutation.mutate()}
-            disabled={pipelineMutation.isPending}
-            className="w-full sm:w-auto bg-sky-600 hover:bg-sky-700 text-white font-black uppercase text-[11px] h-12 px-10 tracking-[0.1em] shadow-lg shadow-sky-200 dark:shadow-none transition-all active:scale-95"
-          >
-            {pipelineMutation.isPending ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin mr-3" />
-                Deduplicating Information...
-              </>
-            ) : (
-              <>
-                <RefreshCcw className="h-4 w-4 mr-3" />
-                Synchronize Intelligence protocol
-              </>
-            )}
-          </Button>
+          <Badge variant="secondary" className="bg-slate-100 text-slate-500 font-black text-[10px] uppercase px-4 py-2">
+            Captured: {rawArticles.length} Streams
+          </Badge>
         </div>
+        {/* Clusters and Forensic Log */}
         <div className="min-h-[500px]">
           {isLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
