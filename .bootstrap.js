@@ -85,7 +85,8 @@ function runSetupCommands() {
     "bun install fast-xml-parser@^4.4.1",
     "bun install recharts",
     "bun install framer-motion",
-    "bun install lucide-react"
+    "bun install lucide-react",
+    "bun install date-fns"
 ];
     
     if (commands.length === 0) {
