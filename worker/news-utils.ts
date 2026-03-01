@@ -97,7 +97,6 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
     const uniqueSources = Array.from(new Set(clusterItems.map(a => a.sourceId)));
     const sourceNames = uniqueSources.map(id => sourceMap.get(id)?.name || "Unknown");
     const sourceCount = sourceNames.length;
-    // Centroid Identification: Select article most central to the cluster
     let centroidArticle = clusterItems[0];
     if (clusterItems.length > 2) {
       let maxTotalSim = -1;
@@ -168,10 +167,21 @@ export function generateCSV(digest: DailyDigest): string {
   ]);
   return [headers, ...rows].map(r => r.map(cell => `"${cell}"`).join(",")).join("\n");
 }
+/**
+ * UTF-8 safe Base64 encoding for Cloudflare Workers
+ */
+function utf8ToBase64(str: string): string {
+  const bytes = new TextEncoder().encode(str);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
 export async function sendDigestEmail(digest: DailyDigest, recipient: string): Promise<{ success: boolean; error?: string }> {
   try {
     const csvContent = generateCSV(digest);
-    const base64Csv = btoa(csvContent);
+    const base64Csv = utf8ToBase64(csvContent);
     const summary = digest.clusters.map((c, i) => `${i + 1}. ${c.representativeTitle} (Consensus: ${(c.consensusFactor*100).toFixed(0)}%)`).join("\n");
     const body = `Verification Report Architected by Veritas Lens.\n\nKey Clusters:\n${summary}\n\nAttached CSV contains full topology and source mapping.`;
     const payload = {
