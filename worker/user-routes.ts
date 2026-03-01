@@ -5,13 +5,13 @@ import { ok, bad, notFound } from './core-utils';
 import { fetchAndParseRSS, clusterArticles, summarizeCluster, generateCSV } from "./news-utils";
 import { format, parseISO, startOfDay, endOfDay } from "date-fns";
 import type { DailyDigest, NewsCluster } from "@shared/news-types";
-let routesRegistered = false;
 export function userRoutes(app: Hono<{ Bindings: Env }>) {
-  if (routesRegistered) {
-    console.warn("[USER ROUTES] Attempted re-registration of routes. Aborting to prevent collision.");
+  // Idempotency guard: Hono does not allow duplicate route definitions for the same path/method.
+  // Dynamic loading in the worker environment can trigger multiple registration attempts.
+  if ((app as any)._veritas_lens_routes_registered) {
     return;
   }
-  routesRegistered = true;
+  (app as any)._veritas_lens_routes_registered = true;
   app.use('/api/system/*', async (c, next) => {
     await next();
     c.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -150,9 +150,8 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       if (allArticles.length === 0) return bad(c, "Null result from RSS clusters. (0 articles found)");
       const uniqueArticles = allArticles.filter((v, i, a) => a.findIndex(t => t.link === v.link) === i);
       const rawClusters = await clusterArticles(uniqueArticles, c.env);
-      // Perform AI summarization pass for the top 10 clusters
       const clusters: NewsCluster[] = await Promise.all(rawClusters.map(async (cl, idx) => {
-        if (idx >= 10) return cl; // Only summarize top impact stories
+        if (idx >= 10) return cl;
         try {
           const aiResult = await summarizeCluster(cl.articles, c.env);
           return { ...cl, neutralSummary: aiResult.summary, tags: aiResult.tags };

@@ -1,20 +1,18 @@
-import React, { Suspense, lazy } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
 import { ExternalLink, Fingerprint, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
 import type { NewsCluster } from '@shared/news-types';
 import { cn } from '@/lib/utils';
-const ConsensusTopology = lazy(() => import('./ConsensusTopology').then(m => ({ default: m.ConsensusTopology })));
+import { ConsensusTopology } from './ConsensusTopology';
 interface IntelligenceCardProps {
   cluster: NewsCluster;
   rank: number;
   onAudit: (cluster: NewsCluster) => void;
 }
 export function IntelligenceCard({ cluster, rank, onAudit }: IntelligenceCardProps) {
-  // Determine border color based on political slant
   const getSlantBorder = (slant: number) => {
     if (slant < -0.2) return 'border-l-sky-500';
     if (slant > 0.2) return 'border-l-rose-500';
@@ -58,14 +56,12 @@ export function IntelligenceCard({ cluster, rank, onAudit }: IntelligenceCardPro
               </Badge>
             ))}
           </div>
-          <Suspense fallback={<Skeleton className="h-20 w-full rounded-lg" />}>
-            <ConsensusTopology
-              sourceNames={cluster.sourceSpread}
-              dispersion={cluster.biasScore}
-              size="sm"
-              className="opacity-80 group-hover:opacity-100 transition-opacity"
-            />
-          </Suspense>
+          <ConsensusTopology
+            sourceNames={cluster.sourceSpread}
+            dispersion={cluster.biasScore}
+            size="sm"
+            className="opacity-80 group-hover:opacity-100 transition-opacity"
+          />
           <div className="pt-4 mt-auto border-t flex items-center justify-between">
             <Button
               variant="ghost"
@@ -76,9 +72,9 @@ export function IntelligenceCard({ cluster, rank, onAudit }: IntelligenceCardPro
               <Fingerprint className="h-3 w-3 mr-1.5" />
               Audit Trail
             </Button>
-            <a 
-              href={cluster.articles[0]?.link} 
-              target="_blank" 
+            <a
+              href={cluster.articles[0]?.link}
+              target="_blank"
               rel="noreferrer"
               className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-900 flex items-center hover:underline"
             >
