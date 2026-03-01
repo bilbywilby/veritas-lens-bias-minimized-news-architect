@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ForensicSearch } from '@/components/ForensicSearch';
+import { ConsensusTimeline } from '@/components/ConsensusTimeline';
 import { api } from '@/lib/api-client';
 import type { DailyDigest } from '@shared/news-types';
 import { format } from 'date-fns';
@@ -20,6 +21,17 @@ export function ArchivePage() {
     queryKey: ['digest-archive'],
     queryFn: () => api<{ items: DailyDigest[] }>('/api/digest/list?limit=50')
   });
+  const timelineData = useMemo(() => {
+    if (!archive?.items) return [];
+    return [...archive.items]
+      .sort((a, b) => a.generatedAt - b.generatedAt)
+      .map(d => ({
+        date: format(new Date(d.generatedAt), "MMM dd"),
+        score: d.consensusScore || 0,
+        articles: d.articleCount,
+        clusters: d.clusterCount
+      }));
+  }, [archive]);
   const filteredArchive = useMemo(() => {
     return archive?.items.filter(d =>
       d.clusters.some(c => c.representativeTitle.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -49,6 +61,11 @@ export function ArchivePage() {
               </TabsTrigger>
             </TabsList>
             <TabsContent value="digests" className="space-y-8 animate-in fade-in duration-500">
+              {timelineData.length > 0 && (
+                <div className="mb-10">
+                  <ConsensusTimeline data={timelineData} />
+                </div>
+              )}
               <div className="relative w-full max-w-md group">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300 group-focus-within:text-sky-600" />
                 <Input

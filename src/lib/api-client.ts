@@ -1,9 +1,9 @@
-import { ApiResponse } from "../../shared/types"
+import { ApiResponse } from "@shared/types"
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   try {
-    const res = await fetch(path, { 
-      headers: { 'Content-Type': 'application/json' }, 
-      ...init 
+    const res = await fetch(path, {
+      headers: { 'Content-Type': 'application/json' },
+      ...init
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "No response body");
