@@ -4,6 +4,7 @@ export interface NewsSource {
   url: string;
   active: boolean;
   weight: number; // 1-5 reliability scale
+  slant: number; // -1 (Left) to +1 (Right)
 }
 export interface Article {
   id: string;
@@ -23,8 +24,10 @@ export interface NewsCluster {
   sourceCount: number;
   neutralSummary: string;
   impactScore: number; // Algorithmic priority score
-  biasScore?: number; // 0-1 scale of divergence
-  clusterVariance?: number; // variance in reporting length/detail
+  biasScore: number; // 0-1 scale of divergence
+  clusterVariance: number; // variance in reporting length/detail
+  meanSlant: number; // Weighted average of source slants
+  consensusFactor: number; // 0-1, inverse of dispersion
 }
 export interface DailyDigest {
   id: string; // Typically YYYY-MM-DD-HHmm

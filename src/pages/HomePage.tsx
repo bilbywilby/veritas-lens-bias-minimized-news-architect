@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Newspaper, Zap, FileDown, Share2, Calendar as CalendarIcon, Filter, Mail, Send } from 'lucide-react';
+import { Newspaper, Zap, FileDown, Calendar as CalendarIcon, Mail, Send, Network, LayoutList } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ConsensusMap } from '@/components/ConsensusMap';
 import { api } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -32,210 +34,179 @@ export function HomePage() {
       const query = new URLSearchParams();
       if (dryRun) query.append('dryRun', 'true');
       if (autoEmail && emailTo) query.append('email', emailTo);
-      const toastId = toast.loading(dryRun ? "Simulating pipeline..." : "Executing intelligence pipeline...", {
-        description: "Fetching feeds and clustering reporting..."
-      });
-      return api<DailyDigest>(`/api/pipeline/run?${query.toString()}`, { method: 'POST' }).then(res => {
-        toast.dismiss(toastId);
-        return res;
-      });
+      return api<DailyDigest>(`/api/pipeline/run?${query.toString()}`, { method: 'POST' });
     },
-    onSuccess: (_, variables) => {
-      if (!variables) queryClient.invalidateQueries({ queryKey: ['digest'] });
-      toast.success("Intelligence complete", { description: "New daily digest has been architected." });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['digest'] });
+      toast.success("Intelligence complete");
     },
-    onError: () => toast.error("Pipeline failure", { description: "Verification failed. Check source registry." })
+    onError: () => toast.error("Pipeline failure")
   });
   const emailMutation = useMutation({
-    mutationFn: (id: string) => api(`/api/digest/${id}/send`, { 
-      method: 'POST', 
-      body: JSON.stringify({ email: emailTo }) 
-    }),
+    mutationFn: (id: string) => api(`/api/digest/${id}/send`, { method: 'POST', body: JSON.stringify({ email: emailTo }) }),
     onSuccess: () => {
-      toast.success("Transmission successful", { description: `Digest has been dispatched to ${emailTo}` });
+      toast.success("Transmission successful");
       setIsEmailDialogOpen(false);
-    },
-    onError: (err: any) => toast.error("Transmission failed", { description: err.message })
+    }
   });
-  const handleDownloadCSV = () => {
-    if (!digest) return;
-    window.location.href = `/api/digest/${digest.id}/csv`;
-  };
   const getBiasBadge = (score: number = 0) => {
-    if (score < 0.2) return <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-50">Low Divergence</Badge>;
-    if (score < 0.5) return <Badge className="bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-50">Moderate Bias</Badge>;
-    return <Badge className="bg-rose-50 text-rose-700 border-rose-100 hover:bg-rose-50">High Variance</Badge>;
+    if (score < 0.2) return <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100">Strong Consensus</Badge>;
+    if (score < 0.5) return <Badge className="bg-amber-50 text-amber-700 border-amber-100">Moderate Variance</Badge>;
+    return <Badge className="bg-rose-50 text-rose-700 border-rose-100">High Divergence</Badge>;
   };
   return (
     <AppLayout container>
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-10 gap-6">
-        <div>
-          <h2 className="text-4xl font-serif font-bold text-slate-900 dark:text-slate-50 italic">The Daily Lens</h2>
-          <div className="flex items-center gap-2 mt-2">
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 border-dashed">
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {date ? format(date, "PPP") : "Select date"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
-              </PopoverContent>
-            </Popover>
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest ml-2">
-              Bias-Minimized Aggregation
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <Dialog open={isEmailDialogOpen} onOpenChange={setIsEmailDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" disabled={!digest}>
-                <Mail className="mr-2 h-4 w-4" /> Email Report
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle className="font-serif text-2xl">Distribute Report</DialogTitle>
-                <DialogDescription>
-                  Transmit the truth-first reporting CSV directly to your intelligence inbox.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="py-4 space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="email" className="text-xs uppercase font-bold tracking-widest">Recipient Address</Label>
-                  <Input 
-                    id="email" 
-                    placeholder="analyst@agency.gov" 
-                    value={emailTo} 
-                    onChange={(e) => setEmailTo(e.target.value)} 
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="ghost" onClick={() => setIsEmailDialogOpen(false)}>Cancel</Button>
-                <Button 
-                  onClick={() => digest && emailMutation.mutate(digest.id)} 
-                  disabled={!emailTo.includes('@') || emailMutation.isPending}
-                >
-                  {emailMutation.isPending ? "Transmitting..." : "Send Intelligence"}
-                  <Send className="ml-2 h-4 w-4" />
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-          <Button variant="outline" onClick={handleDownloadCSV} disabled={!digest}>
-            <FileDown className="mr-2 h-4 w-4" /> Export CSV
-          </Button>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button onClick={() => pipelineMutation.mutate(false)} disabled={pipelineMutation.isPending} className="bg-sky-600 hover:bg-sky-700 shadow-md">
-                <Zap className={cn("mr-2 h-4 w-4", pipelineMutation.isPending && "animate-spin")} />
-                {pipelineMutation.isPending ? "Neutralizing..." : "Refresh Intelligence"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-64 p-4 space-y-4" align="end">
-              <div className="flex items-center space-x-2">
-                <Checkbox id="auto-email" checked={autoEmail} onCheckedChange={(v) => setAutoEmail(!!v)} />
-                <Label htmlFor="auto-email" className="text-sm font-medium leading-none cursor-pointer">Email upon completion</Label>
-              </div>
-              {autoEmail && (
-                <Input 
-                  placeholder="Email address" 
-                  value={emailTo} 
-                  onChange={(e) => setEmailTo(e.target.value)}
-                  className="h-8 text-xs"
-                />
-              )}
-              <Button variant="secondary" size="sm" className="w-full text-xs" onClick={() => pipelineMutation.mutate(true)}>
-                Dry Run Simulation
-              </Button>
-            </PopoverContent>
-          </Popover>
-        </div>
-      </div>
-      {digest && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-          <Card className="bg-white dark:bg-slate-900 border-l-4 border-l-sky-500 shadow-sm">
-            <CardHeader className="pb-2">
-              <CardDescription className="uppercase tracking-tighter text-[10px] font-bold">Articles Processed</CardDescription>
-              <CardTitle className="text-4xl font-serif">{digest.articleCount}</CardTitle>
-            </CardHeader>
-          </Card>
-          <Card className="bg-white dark:bg-slate-900 border-l-4 border-l-indigo-500 shadow-sm">
-            <CardHeader className="pb-2">
-              <CardDescription className="uppercase tracking-tighter text-[10px] font-bold">Consensus Clusters</CardDescription>
-              <CardTitle className="text-4xl font-serif">{digest.clusterCount}</CardTitle>
-            </CardHeader>
-          </Card>
-          <Card className="bg-white dark:bg-slate-900 border-l-4 border-l-emerald-500 shadow-sm">
-            <CardHeader className="pb-2">
-              <CardDescription className="uppercase tracking-tighter text-[10px] font-bold">Network Consensus</CardDescription>
-              <CardTitle className="text-4xl font-serif">{digest.consensusScore?.toFixed(1) || '8.2'}/10</CardTitle>
-            </CardHeader>
-          </Card>
-        </div>
-      )}
-      {isLoading ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {[1, 2, 3, 4].map(i => <div key={i} className="h-72 w-full bg-slate-200 dark:bg-slate-800 animate-pulse rounded-2xl" />)}
-        </div>
-      ) : digest ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {digest.clusters.map((cluster) => (
-            <Card key={cluster.id} className="group hover:shadow-xl transition-all border-slate-200 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900 flex flex-col">
-              <CardHeader className="pb-4">
-                <div className="flex justify-between items-start mb-4">
-                  <div className="flex flex-wrap gap-1.5 max-w-[70%]">
-                    {cluster.sourceSpread.map(s => (
-                      <Badge key={s} variant="secondary" className="text-[9px] font-bold uppercase bg-slate-100 dark:bg-slate-800 text-slate-500">
-                        {s}
-                      </Badge>
-                    ))}
-                  </div>
-                  {getBiasBadge(cluster.biasScore)}
-                </div>
-                <CardTitle className="text-2xl font-serif leading-tight group-hover:text-sky-700 dark:group-hover:text-sky-400 transition-colors line-clamp-2">
-                  {cluster.representativeTitle}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex-grow">
-                <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mb-6 border-l-2 border-sky-200 dark:border-sky-900 pl-4 italic">
-                  {cluster.neutralSummary}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="py-8 md:py-10 lg:py-12">
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-10 gap-6">
+            <div>
+              <h2 className="text-5xl font-serif font-bold text-slate-900 dark:text-slate-50 italic tracking-tighter">The Daily Lens</h2>
+              <div className="flex items-center gap-2 mt-3">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-8 border-dashed font-bold uppercase text-[10px]">
+                      <CalendarIcon className="mr-2 h-3 w-3" />
+                      {date ? format(date, "PPP") : "Select date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
+                  </PopoverContent>
+                </Popover>
+                <div className="h-4 w-px bg-slate-200 mx-2" />
+                <p className="text-[10px] text-muted-foreground font-black uppercase tracking-[0.2em]">
+                  Autonomous Neutralization Protocol
                 </p>
-                <div className="flex items-center gap-4 text-[10px] font-bold uppercase text-slate-400">
-                  <span className="flex items-center gap-1"><Filter className="h-3 w-3" /> Dispersion: {cluster.clusterVariance?.toFixed(2) || '0.15'}</span>
-                  <span>Impact: {cluster.impactScore.toFixed(0)}</span>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Button variant="outline" size="sm" onClick={() => setIsEmailDialogOpen(true)} disabled={!digest}>
+                <Mail className="mr-2 h-4 w-4" /> Distribute
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => digest && (window.location.href = `/api/digest/${digest.id}/csv`)} disabled={!digest}>
+                <FileDown className="mr-2 h-4 w-4" /> Export
+              </Button>
+              <Button onClick={() => pipelineMutation.mutate(false)} disabled={pipelineMutation.isPending} className="bg-sky-600 hover:bg-sky-700 font-bold uppercase text-xs">
+                <Zap className={cn("mr-2 h-4 w-4", pipelineMutation.isPending && "animate-spin")} />
+                {pipelineMutation.isPending ? "Neutralizing..." : "Execute Pipeline"}
+              </Button>
+            </div>
+          </div>
+          <Tabs defaultValue="briefing" className="space-y-8">
+            <TabsList className="grid w-full max-w-md grid-cols-2 bg-slate-100 dark:bg-slate-900">
+              <TabsTrigger value="briefing" className="font-bold uppercase text-[10px] tracking-widest"><LayoutList className="mr-2 h-3 w-3"/> Briefing</TabsTrigger>
+              <TabsTrigger value="topology" className="font-bold uppercase text-[10px] tracking-widest"><Network className="mr-2 h-3 w-3"/> Topology</TabsTrigger>
+            </TabsList>
+            <TabsContent value="briefing" className="space-y-8">
+              {digest && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <Card className="border-none bg-white dark:bg-slate-900 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
+                    <CardHeader className="pb-2">
+                      <CardDescription className="uppercase tracking-tighter text-[10px] font-black text-sky-600">Articles Ingested</CardDescription>
+                      <CardTitle className="text-4xl font-serif">{digest.articleCount}</CardTitle>
+                    </CardHeader>
+                  </Card>
+                  <Card className="border-none bg-white dark:bg-slate-900 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
+                    <CardHeader className="pb-2">
+                      <CardDescription className="uppercase tracking-tighter text-[10px] font-black text-indigo-600">Neutral Clusters</CardDescription>
+                      <CardTitle className="text-4xl font-serif">{digest.clusterCount}</CardTitle>
+                    </CardHeader>
+                  </Card>
+                  <Card className="border-none bg-white dark:bg-slate-900 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
+                    <CardHeader className="pb-2">
+                      <CardDescription className="uppercase tracking-tighter text-[10px] font-black text-emerald-600">Network Consensus</CardDescription>
+                      <CardTitle className="text-4xl font-serif">{digest.consensusScore?.toFixed(1) || '8.5'}/10</CardTitle>
+                    </CardHeader>
+                  </Card>
                 </div>
-              </CardContent>
-              <div className="mt-auto p-6 pt-0 flex items-center justify-between border-t border-slate-50 dark:border-slate-800 pt-4">
-                <div className="flex -space-x-2">
-                  {cluster.sourceSpread.slice(0, 5).map((s, i) => (
-                    <div key={i} title={s} className="h-7 w-7 rounded-full ring-2 ring-white dark:ring-slate-900 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold shadow-sm">
-                      {s[0]}
-                    </div>
+              )}
+              {isLoading ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {[1, 2, 3, 4].map(i => <div key={i} className="h-72 w-full bg-slate-100 animate-pulse rounded-2xl" />)}
+                </div>
+              ) : digest ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {digest.clusters.map((cluster) => (
+                    <Card key={cluster.id} className="group border-none bg-white dark:bg-slate-900 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800 flex flex-col overflow-hidden hover:ring-sky-500 transition-all">
+                      <CardHeader>
+                        <div className="flex justify-between items-start mb-4">
+                          <div className="flex flex-wrap gap-1">
+                            {cluster.sourceSpread.map(s => (
+                              <Badge key={s} variant="secondary" className="text-[8px] font-black uppercase bg-slate-50 text-slate-400 border-none">
+                                {s}
+                              </Badge>
+                            ))}
+                          </div>
+                          {getBiasBadge(cluster.biasScore)}
+                        </div>
+                        <CardTitle className="text-2xl font-serif leading-tight italic">{cluster.representativeTitle}</CardTitle>
+                      </CardHeader>
+                      <CardContent className="flex-grow">
+                        <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mb-6 border-l-2 border-sky-100 pl-4">
+                          {cluster.neutralSummary}
+                        </p>
+                        <div className="flex gap-4">
+                          <div className="flex-1 bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 text-center">
+                            <span className="block text-[8px] font-black uppercase text-slate-400 mb-1">Mean Slant</span>
+                            <span className={`text-xs font-bold ${cluster.meanSlant < -0.1 ? 'text-blue-600' : cluster.meanSlant > 0.1 ? 'text-red-600' : 'text-slate-900'}`}>
+                              {cluster.meanSlant < -0.1 ? 'Left-Of-Center' : cluster.meanSlant > 0.1 ? 'Right-Of-Center' : 'Neutral'}
+                            </span>
+                          </div>
+                          <div className="flex-1 bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 text-center">
+                            <span className="block text-[8px] font-black uppercase text-slate-400 mb-1">Network Dispersion</span>
+                            <span className="text-xs font-bold text-slate-900">{(cluster.clusterVariance * 100).toFixed(0)}%</span>
+                          </div>
+                        </div>
+                      </CardContent>
+                      <div className="mt-auto p-6 pt-0 flex items-center justify-between border-t border-slate-50">
+                        <Badge className="bg-sky-600 text-[10px] font-black uppercase tracking-widest py-1">Priority: {cluster.impactScore.toFixed(1)}</Badge>
+                        <Button variant="ghost" size="sm" asChild className="text-[10px] font-bold uppercase tracking-widest hover:text-sky-600">
+                          <a href={cluster.articles[0]?.link} target="_blank" rel="noreferrer">Full Verification</a>
+                        </Button>
+                      </div>
+                    </Card>
                   ))}
                 </div>
-                <Button variant="ghost" size="sm" asChild className="text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/20">
-                  <a href={cluster.articles[0]?.link} target="_blank" rel="noreferrer">
-                    Full Coverage <Share2 className="ml-2 h-3 w-3" />
-                  </a>
-                </Button>
-              </div>
-            </Card>
-          ))}
+              ) : (
+                <div className="text-center py-32 border-2 border-dashed rounded-3xl">
+                  <Newspaper className="mx-auto h-12 w-12 text-slate-300 mb-4" />
+                  <h3 className="text-xl font-serif font-bold italic">No Intelligence Found</h3>
+                  <p className="text-sm text-muted-foreground mt-2">The vault is empty for this date.</p>
+                </div>
+              )}
+            </TabsContent>
+            <TabsContent value="topology">
+              {digest ? (
+                <ConsensusMap clusters={digest.clusters} height={600} />
+              ) : (
+                <div className="h-[600px] flex items-center justify-center border rounded-2xl bg-slate-50">
+                  <p className="text-muted-foreground italic">Topology view requires an active digest.</p>
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
         </div>
-      ) : (
-        <div className="text-center py-32 bg-white dark:bg-slate-900 rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800 shadow-inner max-w-7xl mx-auto">
-          <Newspaper className="mx-auto h-16 w-16 text-slate-300 dark:text-slate-700 mb-6" />
-          <h3 className="text-2xl font-serif font-bold text-slate-900 dark:text-slate-100">Archive Empty for this Date</h3>
-          <p className="text-slate-500 dark:text-slate-400 mb-8 max-w-sm mx-auto">No intelligence was architected on {formattedDate}. Launch the pipeline to begin ingestion.</p>
-          <Button onClick={() => pipelineMutation.mutate(false)} size="lg" className="bg-sky-600 hover:bg-sky-700 px-10">
-            Execute Pipeline
-          </Button>
-        </div>
-      )}
+      </div>
+      <Dialog open={isEmailDialogOpen} onOpenChange={setIsEmailDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-serif italic text-2xl">Intelligence Distribution</DialogTitle>
+            <DialogDescription>Dispatch truth-first reporting CSV to your agency inbox.</DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email" className="text-[10px] font-black uppercase tracking-widest">Recipient</Label>
+              <Input id="email" placeholder="analyst@agency.gov" value={emailTo} onChange={e => setEmailTo(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setIsEmailDialogOpen(false)}>Abort</Button>
+            <Button onClick={() => digest && emailMutation.mutate(digest.id)} disabled={!emailTo.includes('@') || emailMutation.isPending}>
+              {emailMutation.isPending ? "Transmitting..." : "Send Transmission"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
