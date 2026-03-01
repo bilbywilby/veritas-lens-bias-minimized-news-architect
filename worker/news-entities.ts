@@ -1,4 +1,5 @@
 import { IndexedEntity } from "./core-utils";
+import { XMLParser } from "fast-xml-parser";
 import type { NewsSource, DailyDigest } from "@shared/news-types";
 export class NewsSourceEntity extends IndexedEntity<NewsSource> {
   static readonly entityName = "news-source";
@@ -11,6 +12,26 @@ export class NewsSourceEntity extends IndexedEntity<NewsSource> {
     { id: "npr", name: "NPR News", url: "https://feeds.npr.org/1001/rss.xml", active: true, weight: 1 },
     { id: "aljazeera", name: "Al Jazeera", url: "https://www.aljazeera.com/xml/rss/all.xml", active: true, weight: 1 }
   ];
+  /**
+   * Dry-fetch and basic XML validation for new sources
+   */
+  static async validateFeed(url: string): Promise<boolean> {
+    try {
+      const response = await fetch(url, { 
+        headers: { "User-Agent": "VeritasLens-Validator/1.0" },
+        signal: AbortSignal.timeout(5000)
+      });
+      if (!response.ok) return false;
+      const xml = await response.text();
+      const parser = new XMLParser();
+      const jsonObj = parser.parse(xml);
+      // Basic check for RSS 2.0 or Atom
+      return !!(jsonObj.rss?.channel?.item || jsonObj.feed?.entry);
+    } catch (e) {
+      console.error("[VALIDATE FEED] Error:", e);
+      return false;
+    }
+  }
 }
 export class DailyDigestEntity extends IndexedEntity<DailyDigest> {
   static readonly entityName = "daily-digest";

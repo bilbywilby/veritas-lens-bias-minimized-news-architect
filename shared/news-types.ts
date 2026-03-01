@@ -23,6 +23,8 @@ export interface NewsCluster {
   sourceCount: number;
   neutralSummary: string;
   impactScore: number; // Algorithmic priority score
+  biasScore?: number; // 0-1 scale of divergence
+  clusterVariance?: number; // variance in reporting length/detail
 }
 export interface DailyDigest {
   id: string; // Typically YYYY-MM-DD-HHmm
@@ -30,6 +32,7 @@ export interface DailyDigest {
   articleCount: number;
   clusterCount: number;
   clusters: NewsCluster[];
+  consensusScore?: number;
 }
 export interface ApiResponse<T = unknown> {
   success: boolean;
