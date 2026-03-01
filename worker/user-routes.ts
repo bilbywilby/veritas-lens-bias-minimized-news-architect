@@ -64,7 +64,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     try {
       await SystemStateEntity.ensureSeed(c.env);
       const state = await new SystemStateEntity(c.env, "global").getState();
-      const { items: digests } = await DailyDigestEntity.list(c.env, null, 100);
+      const { items: digests } = await DailyDigestEntity.list(c.env, null, 20);
       const avgConsensus = digests.length > 0
         ? digests.reduce((acc, d) => acc + (d.consensusScore || 0), 0) / digests.length
         : 0;
@@ -92,7 +92,8 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       const maxSlant = parseFloat(c.req.query('maxSlant') || '1.0');
       const sourceFilter = c.req.query('source')?.toLowerCase();
       const queryFilter = c.req.query('q')?.toLowerCase();
-      const { items } = await StoryVaultEntity.list(c.env, null, 500);
+      // Safety Limit: Retaining performance by capping retrieval
+      const { items } = await StoryVaultEntity.list(c.env, null, 40);
       const results = items.filter(s => {
         const slantVal = s.slant ?? 0;
         const matchSlant = slantVal >= minSlant && slantVal <= maxSlant;
@@ -109,7 +110,8 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     try {
       await DailyDigestEntity.ensureSeed(c.env);
       const dateParam = c.req.query('date');
-      const { items } = await DailyDigestEntity.list(c.env, null, 100);
+      // Sub-request Hardening: Limit retrieval to 40 items to stay safely under 50 request limit
+      const { items } = await DailyDigestEntity.list(c.env, null, 40);
       let filtered = items;
       if (dateParam) {
         const parsedDate = parseISO(dateParam);
@@ -164,12 +166,10 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       };
       await DailyDigestEntity.create(c.env, digest);
       await SystemStateEntity.updateMetrics(c.env, uniqueArticles.length, activeSources.length);
-      // Prevent Edge-level caching for pipeline results
       c.header('Cache-Control', 'no-store, no-cache, must-revalidate');
       return ok(c, digest);
     } catch (e: any) {
       console.error("[PIPELINE RUN] Critical Edge Failure:", e.message);
-      // Return partial metadata if possible for UI feedback
       return bad(c, `Edge Execution Failure: ${e.message}`);
     }
   });

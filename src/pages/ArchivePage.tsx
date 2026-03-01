@@ -4,11 +4,11 @@ import { FileText, ChevronRight, Download, Search, AlertCircle, ShieldAlert, Dat
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
 import { ForensicSearch } from '@/components/ForensicSearch';
 import { ConsensusTimeline } from '@/components/ConsensusTimeline';
 import { api } from '@/lib/api-client';
@@ -19,7 +19,7 @@ export function ArchivePage() {
   const [searchTerm, setSearchTerm] = useState('');
   const { data: archive, isLoading } = useQuery<{ items: DailyDigest[] }>({
     queryKey: ['digest-archive'],
-    queryFn: () => api<{ items: DailyDigest[] }>('/api/digest/list?limit=50')
+    queryFn: () => api<{ items: DailyDigest[] }>('/api/digest/list?limit=40')
   });
   const timelineData = useMemo(() => {
     if (!archive?.items) return [];

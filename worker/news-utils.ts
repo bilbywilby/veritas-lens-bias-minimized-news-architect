@@ -1,6 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
 import { subHours, isAfter, parseISO, differenceInHours } from "date-fns";
-import type { Article, NewsCluster, DailyDigest } from "@shared/news-types";
+import type { Article, NewsCluster } from "@shared/news-types";
 import { NewsSourceEntity } from "./news-entities";
 import type { Env } from "./core-utils";
 const USER_AGENTS = [
@@ -11,18 +11,18 @@ async function fetchWithRetry(url: string, attempts: number = 3): Promise<Respon
   for (let i = 0; i < attempts; i++) {
     try {
       const ua = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+      // Safety: Reducing timeout to 6s to ensure the 30s Worker limit is never hit across multiple sources
       const res = await fetch(url, {
         headers: { "User-Agent": ua },
-        signal: AbortSignal.timeout(8000)
+        signal: AbortSignal.timeout(6000)
       });
       if (res.ok) return res;
       if (res.status >= 500) throw new Error(`Server Error ${res.status}`);
     } catch (e: any) {
       const msg = e.message || String(e);
-      // Harden against TLS/SSL certificate noise
       if (msg.includes("certificate") || msg.includes("TLS") || msg.includes("ssl")) {
-        console.warn(`[FETCH] SSL/TLS Warning for ${url}: ${msg}. Skipping source to maintain pipeline stability.`);
-        return null; 
+        console.warn(`[FETCH] SSL/TLS Warning for ${url}: ${msg}. Skipping source.`);
+        return null;
       }
       console.warn(`[FETCH] Attempt ${i + 1} failed for ${url}:`, msg);
     }
@@ -162,11 +162,12 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
       consensusFactor
     });
   }
-  return clusters.sort((a, b) => b.impactScore - a.impactScore).slice(0, 15);
+  // Quality Audit: Returning a tighter Top 12 set for a more focused Briefing
+  return clusters.sort((a, b) => b.impactScore - a.impactScore).slice(0, 12);
 }
-export function generateCSV(digest: DailyDigest): string {
+export function generateCSV(digest: any): string {
   const headers = ["Rank", "Title", "Mean Slant", "Consensus", "Source Count", "Link"];
-  const rows = digest.clusters.map((c, idx) => [
+  const rows = digest.clusters.map((c: any, idx: number) => [
     (idx + 1).toString(),
     c.representativeTitle.replace(/"/g, '""'),
     c.meanSlant.toFixed(3),

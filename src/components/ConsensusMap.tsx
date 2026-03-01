@@ -30,11 +30,13 @@ const CustomTooltip = ({ active, payload }: any) => {
   return null;
 };
 export function ConsensusMap({ clusters, height = 400 }: ConsensusMapProps) {
+  // Safety check to prevent mapping errors
+  if (!clusters || clusters.length === 0) return null;
   const data = clusters.map(c => ({
     ...c,
     x: c.meanSlant,
     y: c.sourceCount,
-    z: (1 - c.clusterVariance) * 100
+    z: (1 - (c.clusterVariance || 0)) * 100
   }));
   return (
     <div className="w-full relative bg-[#f8fafc] dark:bg-slate-950 rounded-2xl border-2 border-slate-100 dark:border-slate-800 p-8 overflow-hidden shadow-sm">
@@ -62,7 +64,7 @@ export function ConsensusMap({ clusters, height = 400 }: ConsensusMapProps) {
               axisLine={{ stroke: '#e2e8f0', strokeWidth: 1 }}
               tickLine={false}
               tick={{ fontSize: 9, fontWeight: 800, fill: '#94a3b8' }}
-              label={{ value: 'POLITICAL BIAS SPECTRUM (PROGRESSIVE ← → CONSERVATIVE)', position: 'bottom', offset: 25, fontSize: 9, fontWeight: 900, fill: '#64748b', letterSpacing: '0.1em' }}
+              label={{ value: 'POLITICAL SPECTRUM (L ← → R)', position: 'bottom', offset: 25, fontSize: 9, fontWeight: 900, fill: '#64748b', letterSpacing: '0.1em' }}
             />
             <YAxis
               type="number"
@@ -72,9 +74,9 @@ export function ConsensusMap({ clusters, height = 400 }: ConsensusMapProps) {
               axisLine={{ stroke: '#e2e8f0', strokeWidth: 1 }}
               tickLine={false}
               tick={{ fontSize: 9, fontWeight: 800, fill: '#94a3b8' }}
-              label={{ value: 'REPORTING DENSITY (SOURCE COUNT)', angle: -90, position: 'left', offset: 0, fontSize: 9, fontWeight: 900, fill: '#64748b', letterSpacing: '0.1em' }}
+              label={{ value: 'REPORTING DENSITY', angle: -90, position: 'left', offset: 0, fontSize: 9, fontWeight: 900, fill: '#64748b', letterSpacing: '0.1em' }}
             />
-            <ZAxis type="number" dataKey="z" range={[200, 1500]} />
+            <ZAxis type="number" dataKey="z" range={[200, 1000]} />
             <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#0ea5e9', strokeWidth: 1, strokeDasharray: '5 5' }} />
             <Scatter name="Clusters" data={data} animationDuration={1000} animationEasing="ease-out">
               {data.map((entry, index) => (
