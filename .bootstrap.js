@@ -88,7 +88,7 @@ function runSetupCommands() {
     "bun install lucide-react",
     "bun install date-fns fast-xml-parser recharts framer-motion lucide-react papaparse",
     "bun install lucide-react@latest date-fns@latest recharts@latest",
-    "bun install date-fns@latest fast-xml-parser@latest lucide-react@latest",
+    "bun install date-fns@latest fast-xml-parser@latest lucide-react@latest recharts@latest",
     "bun install recharts@latest"
 ];
     
