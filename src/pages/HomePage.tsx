@@ -32,7 +32,9 @@ export function HomePage() {
         console.error("[HOME PAGE] Digest fetch failure", e);
         return null;
       }
-    }
+    },
+    enabled: true,
+    staleTime: 1000 * 60 * 5,
   });
   const { data: sysStats } = useQuery<SystemState>({
     queryKey: ['system-stats'],
@@ -44,11 +46,11 @@ export function HomePage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['digest'] });
       queryClient.invalidateQueries({ queryKey: ['system-stats'] });
-      toast.success("Intelligence Synchronized", {
-        description: `Synthesized ${data.clusterCount} tight clusters via Propers-Match algorithm.`
+      toast.success("Intelligence Protocol Executed", {
+        description: `Synthesized ${data.clusterCount} intelligence clusters via AI-Neutralization.`
       });
     },
-    onError: (err: any) => toast.error("Sync Failure", { description: err.message })
+    onError: (err: any) => toast.error("Pipeline Failure", { description: err.message })
   });
   const sortedClusters = digest?.clusters
     ? [...digest.clusters].sort((a, b) => b.impactScore - a.impactScore).slice(0, 10)
@@ -67,7 +69,7 @@ export function HomePage() {
                 Veritas Lens
               </h1>
               <div className="text-[10px] font-black uppercase tracking-[0.5em] text-slate-400">
-                Truth-First Edge Intelligence Briefing
+                AI-Driven Truth Architecture
               </div>
             </div>
             <div className="flex flex-col items-center md:items-end gap-3 w-72">
@@ -76,10 +78,10 @@ export function HomePage() {
               </div>
               <div className="flex gap-2">
                 <Button variant="ghost" size="sm" onClick={() => setShowTour(true)} className="text-[9px] font-bold uppercase tracking-widest h-7 px-2">
-                  <Info className="h-3 w-3 mr-1" /> Operations
+                  <Info className="h-3 w-3 mr-1" /> Protocol
                 </Button>
                 <Badge variant="outline" className="h-7 text-[8px] font-black uppercase border-slate-200">
-                  <Activity className="h-2.5 w-2.5 mr-1 text-emerald-500" /> Edge: Active
+                  <Activity className="h-2.5 w-2.5 mr-1 text-emerald-500" /> Edge: Healthy
                 </Badge>
               </div>
             </div>
@@ -99,7 +101,7 @@ export function HomePage() {
             </Popover>
             <div className="hidden sm:block h-8 w-px bg-slate-200" />
             <div className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
-              Top 10 High-Density Clusters
+              AI-Enhanced High-Density Clusters
             </div>
           </div>
           <Button
@@ -115,7 +117,7 @@ export function HomePage() {
             ) : (
               <>
                 <RefreshCcw className="h-4 w-4 mr-3" />
-                Synchronize Intelligence Protocol
+                Synchronize Intelligence protocol
               </>
             )}
           </Button>
@@ -184,12 +186,6 @@ export function HomePage() {
                       ))}
                     </TableBody>
                   </Table>
-                  {rawArticles.length === 0 && (
-                    <div className="py-20 text-center">
-                      <Fingerprint className="h-10 w-10 mx-auto text-slate-200 mb-4" />
-                      <p className="text-slate-400 italic font-serif">No forensic signatures localized in current cycle.</p>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>

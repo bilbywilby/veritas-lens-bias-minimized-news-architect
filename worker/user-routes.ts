@@ -2,9 +2,9 @@ import { Hono } from "hono";
 import type { Env } from './core-utils';
 import { NewsSourceEntity, DailyDigestEntity, SystemStateEntity, StoryVaultEntity } from "./news-entities";
 import { ok, bad, notFound } from './core-utils';
-import { fetchAndParseRSS, clusterArticles, generateCSV } from "./news-utils";
+import { fetchAndParseRSS, clusterArticles, summarizeCluster, generateCSV } from "./news-utils";
 import { format, parseISO, startOfDay, endOfDay } from "date-fns";
-import type { DailyDigest } from "@shared/news-types";
+import type { DailyDigest, NewsCluster } from "@shared/news-types";
 let routesRegistered = false;
 export function userRoutes(app: Hono<{ Bindings: Env }>) {
   if (routesRegistered) {
@@ -142,22 +142,25 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     try {
       const sourcesPage = await NewsSourceEntity.list(c.env);
       const activeSources = (sourcesPage.items || []).filter(s => s.active);
-      if (activeSources.length === 0) return bad(c, "Operational Error: No active intelligence streams registered.");
-      const settlements = await Promise.allSettled(activeSources.map(async (src) => {
-        return await fetchAndParseRSS(src.id, src.name, src.url);
-      }));
+      if (activeSources.length === 0) return bad(c, "Operational Error: No active streams registered.");
+      const settlements = await Promise.allSettled(activeSources.map(src => fetchAndParseRSS(src.id, src.name, src.url)));
       const allArticles = settlements
-        .map((res, i) => {
-          if (res.status === 'fulfilled') return res.value;
-          console.error(`[PIPELINE] Stream ${activeSources[i].name} failed:`, res.reason);
-          return [];
-        })
+        .map((res, i) => (res.status === 'fulfilled' ? res.value : []))
         .flat();
-      if (allArticles.length === 0) {
-        return bad(c, "Null result from RSS clusters. (0 articles found)");
-      }
-      const uniqueArticles = allArticles.filter((v, i, a) => a.findIndex(t => (t.link === v.link)) === i);
-      const clusters = await clusterArticles(uniqueArticles, c.env);
+      if (allArticles.length === 0) return bad(c, "Null result from RSS clusters. (0 articles found)");
+      const uniqueArticles = allArticles.filter((v, i, a) => a.findIndex(t => t.link === v.link) === i);
+      const rawClusters = await clusterArticles(uniqueArticles, c.env);
+      // Perform AI summarization pass for the top 10 clusters
+      const clusters: NewsCluster[] = await Promise.all(rawClusters.map(async (cl, idx) => {
+        if (idx >= 10) return cl; // Only summarize top impact stories
+        try {
+          const aiResult = await summarizeCluster(cl.articles, c.env);
+          return { ...cl, neutralSummary: aiResult.summary, tags: aiResult.tags };
+        } catch (e) {
+          console.error(`[PIPELINE] AI Summary failed for cluster ${cl.representativeTitle}`);
+          return cl;
+        }
+      }));
       const digest: DailyDigest = {
         id: format(new Date(), 'yyyy-MM-dd-HHmm'),
         generatedAt: Date.now(),
@@ -168,7 +171,6 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       };
       await DailyDigestEntity.create(c.env, digest);
       await SystemStateEntity.updateMetrics(c.env, uniqueArticles.length, activeSources.length);
-      c.header('Cache-Control', 'no-store, no-cache, must-revalidate');
       return ok(c, digest);
     } catch (e: any) {
       console.error("[PIPELINE RUN] Critical Edge Failure:", e.message);

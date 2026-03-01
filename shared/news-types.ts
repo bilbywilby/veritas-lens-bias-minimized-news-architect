@@ -23,6 +23,7 @@ export interface NewsCluster {
   sourceSpread: string[]; // List of unique source names
   sourceCount: number;
   neutralSummary: string;
+  tags: string[]; // AI-generated intelligence categories
   impactScore: number; // Algorithmic priority score
   biasScore: number; // 0-1 scale of divergence
   clusterVariance: number; // variance in reporting length/detail
@@ -51,6 +52,7 @@ export interface VaultStory {
   link: string;
   slant: number;
   bias: number;
+  tags?: string[];
   timestamp: number;
 }
 export interface ApiResponse<T = unknown> {

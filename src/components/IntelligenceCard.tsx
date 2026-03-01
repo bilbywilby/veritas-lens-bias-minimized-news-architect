@@ -1,6 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import { motion } from 'framer-motion';
-import { ExternalLink, Fingerprint, TrendingUp, Users } from 'lucide-react';
+import { ExternalLink, Fingerprint, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -41,7 +41,7 @@ export function IntelligenceCard({ cluster, rank, onAudit }: IntelligenceCardPro
               {(cluster.consensusFactor * 100).toFixed(0)}% Consensus
             </div>
           </div>
-          <CardTitle 
+          <CardTitle
             className="font-serif italic text-xl leading-tight group-hover:text-sky-700 transition-colors line-clamp-2 cursor-pointer"
             onClick={() => onAudit(cluster)}
           >
@@ -52,11 +52,18 @@ export function IntelligenceCard({ cluster, rank, onAudit }: IntelligenceCardPro
           <p className="text-sm text-slate-600 dark:text-slate-400 font-serif italic line-clamp-3 leading-relaxed">
             {cluster.neutralSummary}
           </p>
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {cluster.tags?.map(tag => (
+              <Badge key={tag} variant="outline" className="text-[8px] font-black uppercase tracking-tight py-0 border-sky-200 text-sky-700 dark:border-sky-800 dark:text-sky-400">
+                {tag}
+              </Badge>
+            ))}
+          </div>
           <Suspense fallback={<Skeleton className="h-24 w-full rounded-lg" />}>
-            <ConsensusTopology 
-              sourceNames={cluster.sourceSpread} 
-              dispersion={cluster.biasScore} 
-              size="sm" 
+            <ConsensusTopology
+              sourceNames={cluster.sourceSpread}
+              dispersion={cluster.biasScore}
+              size="sm"
             />
           </Suspense>
           <div className="flex flex-wrap gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
@@ -72,13 +79,13 @@ export function IntelligenceCard({ cluster, rank, onAudit }: IntelligenceCardPro
             )}
           </div>
           <div className="pt-4 mt-auto border-t flex items-center justify-between gap-2">
-            <Button 
-              variant="ghost" 
-              size="sm" 
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => onAudit(cluster)}
               className="h-8 px-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-sky-600"
             >
-              <Fingerprint className="h-3.5 w-3.5 mr-1.5" /> 
+              <Fingerprint className="h-3.5 w-3.5 mr-1.5" />
               Audit Trail
             </Button>
             <Button

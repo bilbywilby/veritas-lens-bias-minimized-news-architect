@@ -29,7 +29,6 @@ function tokenize(text: string): Set<string> {
 }
 function extractProperNouns(text: string): Set<string> {
   const propers = new Set<string>();
-  // Match words starting with uppercase (excluding sentence starts broadly)
   const regex = /\b[A-Z][a-z]{1,}\b/g;
   const matches = text.match(regex) || [];
   const COMMON_STARTERS = new Set(['The', 'This', 'That', 'A', 'An', 'In', 'On', 'With', 'From']);
@@ -110,11 +109,63 @@ export async function fetchAndParseRSS(sourceId: string, sourceName: string, url
     return [];
   }
 }
+export async function summarizeCluster(articles: Article[], env: any): Promise<{ summary: string; tags: string[] }> {
+  const snippets = articles.slice(0, 5).map(a => `[${a.sourceName}]: ${a.title} - ${a.contentSnippet}`).join("\n---\n");
+  const fallback = { summary: articles[0]?.contentSnippet || articles[0]?.title || "Summary unavailable.", tags: ["General"] };
+  const ANTHROPIC_KEY = env.ANTHROPIC_API_KEY || env.ANTHROPIC_KEY;
+  const OPENAI_KEY = env.OPENAI_API_KEY || env.OPENAI_KEY;
+  if (!ANTHROPIC_KEY && !OPENAI_KEY) return fallback;
+  const systemPrompt = "You are a neutral news synthesizer. Summarize the provided snippets into a bias-minimized report. Discount editorialized adjectives. Output strictly JSON: { \"summary\": \"string\", \"tags\": [\"string\", \"string\"] }.";
+  try {
+    if (ANTHROPIC_KEY) {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": ANTHROPIC_KEY,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "claude-3-5-sonnet-20240620",
+          max_tokens: 500,
+          system: systemPrompt,
+          messages: [{ role: "user", content: snippets }]
+        })
+      });
+      if (response.ok) {
+        const data: any = await response.json();
+        return JSON.parse(data.content[0].text);
+      }
+    } else if (OPENAI_KEY) {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${OPENAI_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: snippets }
+          ],
+          response_format: { type: "json_object" }
+        })
+      });
+      if (response.ok) {
+        const data: any = await response.json();
+        return JSON.parse(data.choices[0].message.content);
+      }
+    }
+  } catch (e) {
+    console.error("[AI SUMMARIZE] Synthesis failed:", e);
+  }
+  return fallback;
+}
 export async function clusterArticles(articles: Article[], env: Env): Promise<NewsCluster[]> {
   const { items: sources } = await NewsSourceEntity.list(env);
   const sourceMap = new Map(sources.map(s => [s.id, s]));
-  // High-fidelity deduplication: Newest-first processing
-  const sortedArticles = [...articles].sort((a, b) => 
+  const sortedArticles = [...articles].sort((a, b) =>
     new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime()
   );
   if (sortedArticles.length === 0) return [];
@@ -135,16 +186,13 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
       const repFeatures = articleFeatures.get(representative.id)!;
       const jaccard = jaccardSimilarity(features.tokens, repFeatures.tokens);
       const commonPropers = intersectionSize(features.propers, repFeatures.propers);
-      // Match logic: Jaccard threshold OR Proper Noun overlap
       if (jaccard >= 0.25 || commonPropers >= 1) {
         group.push(article);
         found = true;
         break;
       }
     }
-    if (!found) {
-      clusterGroups.push([article]);
-    }
+    if (!found) clusterGroups.push([article]);
   }
   return clusterGroups.map(group => {
     const representative = group[0];
@@ -160,7 +208,6 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
     const hoursOld = Math.max(0, differenceInHours(now, newestDate));
     const recencyScore = Math.exp(-hoursOld / 48);
     const sourceCount = sourceNames.length;
-    // Consensus Factor calculation
     let avgSim = 1.0;
     if (group.length > 1) {
       let totalSim = 0;
@@ -183,6 +230,7 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
       sourceSpread: sourceNames,
       sourceCount,
       neutralSummary: representative.contentSnippet || representative.title,
+      tags: [], // Populated in post-processing summarization pass
       impactScore,
       biasScore: Math.max(0, 1 - avgSim),
       clusterVariance: Math.max(0, 1 - consensusFactor),
@@ -192,13 +240,15 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
   }).sort((a, b) => b.impactScore - a.impactScore).slice(0, 15);
 }
 export function generateCSV(digest: any): string {
-  const headers = ["Rank", "Title", "Mean Slant", "Consensus", "Source Count", "Link"];
+  const headers = ["Rank", "Title", "Mean Slant", "Consensus", "Source Count", "Tags", "Neutral Summary", "Link"];
   const rows = digest.clusters.map((c: any, idx: number) => [
     (idx + 1).toString(),
     c.representativeTitle.replace(/"/g, '""'),
     c.meanSlant.toFixed(3),
     (c.consensusFactor * 100).toFixed(0) + "%",
     c.sourceCount.toString(),
+    (c.tags || []).join("; ").replace(/"/g, '""'),
+    c.neutralSummary.replace(/"/g, '""').replace(/\n/g, ' '),
     c.articles[0]?.link || ""
   ]);
   return [headers, ...rows].map(r => r.map((cell: string) => `"${cell}"`).join(",")).join("\n");

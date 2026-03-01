@@ -28,7 +28,7 @@ const router = createBrowserRouter([
     errorElement: <RouteErrorBoundary />,
   }
 ]);
-function AppProviders() {
+export function AppProviders() {
   const queryClient = useMemo(() => new QueryClient({
     defaultOptions: {
       queries: {
