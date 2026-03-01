@@ -1,6 +1,6 @@
 # Cloudflare Workers + React - Multi-Entity Durable Object Storage Template
 
-[![[cloudflarebutton]]](https://deploy.workers.cloudflare.com/?url=${repositoryUrl})
+[![[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/bilbywilby/veritas-lens-bias-minimized-news-architect)]](https://deploy.workers.cloudflare.com/?url=${repositoryUrl})
 
 A production-ready Cloudflare Workers + React template featuring a single Durable Object (DO) for efficient, multi-entity storage (users, chats, organizations, etc.). No direct DO access required—use simple entity APIs for persistence. Perfect for backend-heavy apps, chats, dashboards, and more.
 
@@ -118,7 +118,7 @@ bun run deploy
 
 **Observability**: Enabled by default (`wrangler.jsonc`).
 
-[![[cloudflarebutton]]](https://deploy.workers.cloudflare.com/?url=${repositoryUrl})
+[![[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/bilbywilby/veritas-lens-bias-minimized-news-architect)]](https://deploy.workers.cloudflare.com/?url=${repositoryUrl})
 
 **Bindings**: Production uses same single `GlobalDurableObject` (migrates automatically).
 
