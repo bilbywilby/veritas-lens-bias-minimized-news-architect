@@ -90,7 +90,8 @@ function runSetupCommands() {
     "bun install lucide-react@latest date-fns@latest recharts@latest",
     "bun install date-fns@latest fast-xml-parser@latest lucide-react@latest recharts@latest",
     "bun install recharts@latest",
-    "bun install @tanstack/react-query@latest react-router-dom@latest"
+    "bun install @tanstack/react-query@latest",
+    "bun install react-router-dom@6.30.0"
 ];
     
     if (commands.length === 0) {
