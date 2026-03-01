@@ -82,7 +82,10 @@ function runSetupCommands() {
     "bun add papaparse@^5.4.1",
     "bun install fast-xml-parser",
     "bun install papaparse@^5.4.1",
-    "bun install fast-xml-parser@^4.4.1"
+    "bun install fast-xml-parser@^4.4.1",
+    "bun install recharts",
+    "bun install framer-motion",
+    "bun install lucide-react"
 ];
     
     if (commands.length === 0) {
