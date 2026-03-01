@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from './core-utils';
-import { NewsSourceEntity, DailyDigestEntity } from "./news-entities";
+import { NewsSourceEntity, DailyDigestEntity, SystemStateEntity, StoryVaultEntity } from "./news-entities";
 import { ok, bad, notFound } from './core-utils';
 import { fetchAndParseRSS, clusterArticles, generateCSV } from "./news-utils";
 import { format, parseISO, startOfDay, endOfDay, subDays } from "date-fns";
@@ -41,6 +41,23 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
   app.delete('/api/sources/:id', async (c) => {
     const deleted = await NewsSourceEntity.delete(c.env, c.req.param('id'));
     return ok(c, { id: c.req.param('id'), deleted });
+  });
+  app.get('/api/system/health', async (c) => {
+    await SystemStateEntity.ensureSeed(c.env);
+    const state = await new SystemStateEntity(c.env, "global").getState();
+    return ok(c, state);
+  });
+  app.post('/api/system/sync', async (c) => {
+    const { items } = await DailyDigestEntity.list(c.env, null, 1);
+    if (items.length === 0) return bad(c, "No digest to archive");
+    await DailyDigestEntity.archiveToVault(c.env, items[0]);
+    return ok(c, { archived: items[0].id });
+  });
+  app.get('/api/stories/search', async (c) => {
+    const { items } = await StoryVaultEntity.list(c.env, null, 100);
+    const query = c.req.query('q')?.toLowerCase();
+    const results = query ? items.filter(s => s.title.toLowerCase().includes(query) || s.sourceName.toLowerCase().includes(query)) : items;
+    return ok(c, results);
   });
   app.get('/api/digest/latest', async (c) => {
     await DailyDigestEntity.ensureSeed(c.env);
@@ -99,7 +116,6 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     const sourcesPage = await NewsSourceEntity.list(c.env);
     const activeSources = sourcesPage.items.filter(s => s.active);
     if (activeSources.length === 0) return bad(c, "No active sources configured");
-    // Parallelized fetch and parse for maximum speed at the Edge
     const fetchResults = await Promise.all(activeSources.map(async (src) => {
       try {
         return await fetchAndParseRSS(src.id, src.name, src.url);
@@ -126,6 +142,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       consensusScore
     };
     await DailyDigestEntity.create(c.env, digest);
+    await SystemStateEntity.updateMetrics(c.env, uniqueArticles.length, activeSources.length);
     return ok(c, digest);
   });
 }

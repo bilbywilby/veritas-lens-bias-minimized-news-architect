@@ -17,7 +17,9 @@ async function fetchWithRetry(url: string, attempts: number = 3): Promise<Respon
         signal: AbortSignal.timeout(8000)
       });
       if (res.ok) return res;
-    } catch (e) {}
+    } catch (e) {
+      console.warn(`[FETCH] Retry ${i+1} failed for ${url}:`, e);
+    }
     if (i < attempts - 1) {
       await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
     }
@@ -25,7 +27,11 @@ async function fetchWithRetry(url: string, attempts: number = 3): Promise<Respon
   return null;
 }
 export async function fetchAndParseRSS(sourceId: string, sourceName: string, url: string): Promise<Article[]> {
-  const response = await fetchWithRetry(url);
+  // Add safety timeout to prevent hanging the whole pipeline
+  const response = await fetchWithRetry(url).catch(err => {
+    console.error(`[RSS] Critical fetch error for ${sourceName}:`, err);
+    return null;
+  });
   if (!response) return [];
   try {
     const xml = await response.text();
@@ -33,7 +39,7 @@ export async function fetchAndParseRSS(sourceId: string, sourceName: string, url
     const jsonObj = parser.parse(xml);
     const items = jsonObj.rss?.channel?.item || jsonObj.feed?.entry || [];
     const normalizedItems = Array.isArray(items) ? items : [items];
-    const cutoff = subHours(new Date(), 72); // Increased window slightly for weekend reporting cycles
+    const cutoff = subHours(new Date(), 72); 
     return normalizedItems
       .map((item: any) => {
         const pubDateStr = item.pubDate || item.updated || item['dc:date'] || new Date().toISOString();
@@ -58,6 +64,7 @@ export async function fetchAndParseRSS(sourceId: string, sourceName: string, url
         catch { return true; }
       });
   } catch (e) {
+    console.error(`[RSS] Parse error for ${sourceName}:`, e);
     return [];
   }
 }
@@ -91,7 +98,6 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
     for (const other of articles) {
       if (processedIds.has(other.id)) continue;
       const tokensB = tokenMap.get(other.id)!;
-      // Increased threshold to 0.22 for stricter grouping
       if (jaccardSimilarity(tokensA, tokensB) > 0.22) {
         clusterItems.push(other);
         processedIds.add(other.id);
@@ -100,7 +106,6 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
     const uniqueSources = Array.from(new Set(clusterItems.map(a => a.sourceId)));
     const sourceNames = uniqueSources.map(id => sourceMap.get(id)?.name || "Unknown");
     const sourceCount = sourceNames.length;
-    // Choose centroid by highest internal consistency
     let centroidArticle = clusterItems[0];
     if (clusterItems.length > 2) {
       let maxTotalSim = -1;
@@ -132,7 +137,6 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
       }
       avgSim = totalSim / (pairs || 1);
     }
-    // Impact Score Calculation: Higher weight on source diversity and consensus
     const sourceDiversityWeight = Math.min(2.0, 1 + (sourceCount * 0.2));
     const consensusFactor = Math.min(1, avgSim * sourceDiversityWeight);
     const newestDate = clusterItems.reduce((max, a) => {
@@ -140,7 +144,7 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
       return d > max ? d : max;
     }, new Date(0));
     const hoursOld = Math.max(0, differenceInHours(now, newestDate));
-    const recencyScore = Math.exp(-hoursOld / 36); // Faster decay for news relevance
+    const recencyScore = Math.exp(-hoursOld / 36);
     const impactScore = (sourceCount * 0.8) + (recencyScore * 4.0) + (consensusFactor * 3.0);
     clusters.push({
       id: crypto.randomUUID(),
@@ -156,7 +160,6 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
       consensusFactor
     });
   }
-  // Return top 15 significant clusters
   return clusters.sort((a, b) => b.impactScore - a.impactScore).slice(0, 15);
 }
 export function generateCSV(digest: DailyDigest): string {

@@ -72,9 +72,6 @@
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
-  * {
-    @apply border-border;
-  }
   html {
     scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
@@ -112,7 +109,7 @@
   .text-pretty {
     text-wrap: pretty;
   }
-  /* Glass Morphism - Fixed shadow-glass undefined error */
+  /* Glass Morphism */
   .glass {
     @apply bg-white/10 backdrop-blur-md border border-white/20 shadow-xl;
   }
@@ -134,7 +131,7 @@
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
   }
-  /* Standardized shimmer animation to avoid undefined animate-shimmer errors */
+  /* Standardized shimmer animation */
   .shimmer-bg {
     @apply relative overflow-hidden bg-muted/20;
   }
@@ -149,7 +146,7 @@
   .center-col {
     @apply flex flex-col items-center justify-center;
   }
-  /* Responsive Typography - Fixed font-display undefined error */
+  /* Responsive Typography */
   .text-display {
     @apply text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-serif font-bold leading-tight;
   }
@@ -158,22 +155,23 @@
   }
   /* Bias Topology Visuals */
   .topology-grid {
-    background-image: 
-      repeating-linear-gradient(theme('colors.slate.200' / 10%) 0px, theme('colors.slate.200' / 10%) 1px, transparent 1px, transparent 20px),
-      repeating-linear-gradient(90deg, theme('colors.slate.200' / 10%) 0px, theme('colors.slate.200' / 10%) 1px, transparent 1px, transparent 20px);
+    background-image:
+      repeating-linear-gradient(#e2e8f01a 0px, #e2e8f01a 1px, transparent 1px, transparent 20px),
+      repeating-linear-gradient(90deg, #e2e8f01a 0px, #e2e8f01a 1px, transparent 1px, transparent 20px);
   }
   .bias-aura {
     position: absolute;
     border-radius: 50%;
-    background: radial-gradient(circle, theme('colors.sky.500' / 10%) 0%, transparent 70%);
+    background: radial-gradient(circle, #0ea5e91a 0%, transparent 70%);
     transform: translate(-50%, -50%);
     pointer-events: none;
-    width: calc(var(--dispersion) * 100%);
-    height: calc(var(--dispersion) * 100%);
+    width: calc(var(--dispersion, 0.2) * 100%);
+    height: calc(var(--dispersion, 0.2) * 100%);
     transition: width 0.5s ease, height 0.5s ease;
   }
   .source-ping {
-    @apply absolute h-1.5 w-1.5 rounded-full bg-sky-500 shadow-[0_0_8px_theme('colors.sky.400')];
+    @apply absolute h-1.5 w-1.5 rounded-full bg-sky-500;
+    box-shadow: 0 0 8px #38bdf8;
     transform: translate(-50%, -50%);
   }
   .source-ping:hover {

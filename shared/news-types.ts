@@ -37,6 +37,22 @@ export interface DailyDigest {
   clusters: NewsCluster[];
   consensusScore?: number;
 }
+export interface SystemState {
+  id: string;
+  lastRun: number;
+  totalArticles: number;
+  sourceCount: number;
+}
+export interface VaultStory {
+  id: string;
+  clusterId: string;
+  sourceName: string;
+  title: string;
+  link: string;
+  slant: number;
+  bias: number;
+  timestamp: number;
+}
 export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;

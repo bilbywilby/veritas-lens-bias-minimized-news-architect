@@ -1,7 +1,7 @@
 import { IndexedEntity } from "./core-utils";
 import type { Env } from "./core-utils";
 import { XMLParser } from "fast-xml-parser";
-import type { NewsSource, DailyDigest } from "@shared/news-types";
+import type { NewsSource, DailyDigest, SystemState, VaultStory } from "@shared/news-types";
 export class NewsSourceEntity extends IndexedEntity<NewsSource> {
   static readonly entityName = "news-source";
   static readonly indexName = "news-sources";
@@ -29,9 +29,8 @@ export class NewsSourceEntity extends IndexedEntity<NewsSource> {
       return false;
     }
   }
-
   static async ensureSeed(env: Env): Promise<void> {
-    const {items} = await this.list(env);
+    const { items } = await this.list(env);
     if (items.length === 0) {
       for (const data of this.seedData) {
         await this.create(env, data);
@@ -39,14 +38,58 @@ export class NewsSourceEntity extends IndexedEntity<NewsSource> {
     }
   }
 }
+export class SystemStateEntity extends IndexedEntity<SystemState> {
+  static readonly entityName = "system-state";
+  static readonly indexName = "system-states";
+  static readonly initialState: SystemState = { id: "global", lastRun: 0, totalArticles: 0, sourceCount: 0 };
+  static async updateMetrics(env: Env, articlesCount: number, sourceCount: number): Promise<void> {
+    const entity = new SystemStateEntity(env, "global");
+    await entity.mutate(s => ({
+      ...s,
+      lastRun: Date.now(),
+      totalArticles: s.totalArticles + articlesCount,
+      sourceCount
+    }));
+  }
+  static async ensureSeed(env: Env): Promise<void> {
+    const entity = new SystemStateEntity(env, "global");
+    if (!await entity.exists()) {
+      await SystemStateEntity.create(env, { id: "global", lastRun: 0, totalArticles: 0, sourceCount: 0 });
+    }
+  }
+}
+export class StoryVaultEntity extends IndexedEntity<VaultStory> {
+  static readonly entityName = "story-vault";
+  static readonly indexName = "story-vault-index";
+  static readonly initialState: VaultStory = { id: "", clusterId: "", sourceName: "", title: "", link: "", slant: 0, bias: 0, timestamp: 0 };
+}
 export class DailyDigestEntity extends IndexedEntity<DailyDigest> {
   static readonly entityName = "daily-digest";
   static readonly indexName = "daily-digests";
   static readonly initialState: DailyDigest = { id: "", generatedAt: 0, articleCount: 0, clusterCount: 0, clusters: [] };
+  static async archiveToVault(env: Env, digest: DailyDigest): Promise<void> {
+    const stories: VaultStory[] = [];
+    for (const cluster of digest.clusters) {
+      for (const article of cluster.articles) {
+        stories.push({
+          id: crypto.randomUUID(),
+          clusterId: cluster.id,
+          sourceName: article.sourceName,
+          title: article.title,
+          link: article.link,
+          slant: cluster.meanSlant,
+          bias: cluster.biasScore,
+          timestamp: digest.generatedAt
+        });
+      }
+    }
+    // Batch processing for vaulting
+    await Promise.all(stories.map(s => StoryVaultEntity.create(env, s)));
+  }
   static seedData: DailyDigest[] = [
     {
       id: "sample-digest-001",
-      generatedAt: Date.now() - 86400000, // yesterday for realistic recency
+      generatedAt: Date.now() - 86400000,
       articleCount: 142,
       clusterCount: 3,
       consensusScore: 9.2,
@@ -57,45 +100,18 @@ export class DailyDigestEntity extends IndexedEntity<DailyDigest> {
           articles: [],
           sourceSpread: ["Reuters", "Associated Press", "BBC World", "Al Jazeera"],
           sourceCount: 4,
-          neutralSummary: "Major central banks across the G7 have issued coordinated statements indicating a pause in interest rate adjustments. Analysts note that inflationary pressures have stabilized faster than projected in Q3, leading to a unified consensus on monetary policy for the upcoming fiscal cycle.",
+          neutralSummary: "Major central banks across the G7 have issued coordinated statements indicating a pause in interest rate adjustments.",
           impactScore: 9.8,
           biasScore: 0.05,
           clusterVariance: 0.1,
           meanSlant: 0.0,
           consensusFactor: 0.95
-        },
-        {
-          id: "cluster-sample-2",
-          representativeTitle: "Comprehensive Tech Regulation Framework Proposed in EU",
-          articles: [],
-          sourceSpread: ["BBC World", "NPR News", "Reuters"],
-          sourceCount: 3,
-          neutralSummary: "A new legislative framework targeting decentralized AI models has been introduced in the European Parliament. While sources agree on the intent to protect data privacy, reporting varies on the potential economic impact for smaller startups versus established technology conglomerates.",
-          impactScore: 7.5,
-          biasScore: 0.28,
-          clusterVariance: 0.35,
-          meanSlant: -0.15,
-          consensusFactor: 0.65
-        },
-        {
-          id: "cluster-sample-3",
-          representativeTitle: "Environmental Protocol Debate Escalates Ahead of Summit",
-          articles: [],
-          sourceSpread: ["Al Jazeera", "NPR News", "Associated Press"],
-          sourceCount: 3,
-          neutralSummary: "Discussions surrounding the upcoming maritime environmental protocols have exposed deep divisions between manufacturing hubs and conservationist groups. Reports diverge significantly on the feasibility of the 2030 targets, with some outlets emphasizing economic costs and others focusing on long-term ecological risks.",
-          impactScore: 6.2,
-          biasScore: 0.55,
-          clusterVariance: 0.6,
-          meanSlant: 0.1,
-          consensusFactor: 0.4
         }
       ]
     }
   ];
-
   static async ensureSeed(env: Env): Promise<void> {
-    const {items} = await this.list(env);
+    const { items } = await this.list(env);
     if (items.length === 0) {
       for (const data of this.seedData) {
         await this.create(env, data);

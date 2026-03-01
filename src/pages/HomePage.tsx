@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Newspaper, Zap, FileDown, Calendar as CalendarIcon, Network, LayoutList, Fingerprint, TrendingUp, TrendingDown, Minus, HelpCircle, Rss, AlertTriangle, Loader2, CheckCircle } from 'lucide-react';
+import { Newspaper, Zap, FileDown, Calendar as CalendarIcon, Network, LayoutList, Fingerprint, TrendingUp, TrendingDown, Minus, HelpCircle, Rss, AlertTriangle, Loader2 } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -18,7 +18,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { DailyDigest, NewsCluster } from '@shared/news-types';
 import { format } from 'date-fns';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 export function HomePage() {
   const queryClient = useQueryClient();
@@ -30,8 +30,13 @@ export function HomePage() {
   const { data: digest, isLoading, isError } = useQuery<DailyDigest | null>({
     queryKey: ['digest', formattedDate],
     queryFn: async () => {
-      const res = await api<any>(`/api/digest/list?date=${formattedDate}&limit=1`);
-      return res?.items?.[0] || null;
+      try {
+        const res = await api<any>(`/api/digest/list?date=${formattedDate}&limit=1`);
+        return res?.items?.[0] || null;
+      } catch (err) {
+        console.error("[HOME] Failed to fetch digest from Edge storage:", err);
+        throw err;
+      }
     },
     retry: 1
   });
@@ -49,6 +54,7 @@ export function HomePage() {
       });
     },
     onError: (error: any) => {
+      console.error("[HOME] Pipeline execution failed:", error);
       toast.error(`Ingestion Pipeline Failure`, {
         description: error.message || "Unable to synchronize with information streams."
       });
@@ -65,8 +71,8 @@ export function HomePage() {
         }
       });
     }
-  }, [digest, isSample]);
-  const handleExport = () => {
+  }, [digest, isSample, pipelineMutation, isLoading]);
+  const handleExport = useCallback(() => {
     if (!digest) return;
     setIsExporting(true);
     setTimeout(() => {
@@ -74,7 +80,7 @@ export function HomePage() {
       toast.success("Intelligence Export Initiated");
       setIsExporting(false);
     }, 800);
-  };
+  }, [digest]);
   const getBiasBadge = (score: number = 0) => {
     if (score < 0.22) return <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 hover:bg-emerald-50">High Consensus</Badge>;
     if (score < 0.45) return <Badge className="bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-50">Reporting Variance</Badge>;
@@ -91,7 +97,6 @@ export function HomePage() {
     <AppLayout container>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="py-8 md:py-10 lg:py-12">
-          {/* Authentic Broadsheet Masthead */}
           <div className="border-t-4 border-b-2 border-slate-900 dark:border-slate-100 py-8 mb-12 relative">
             <div className="flex flex-col md:flex-row justify-between items-center gap-6 relative z-10">
               <div className="flex flex-col items-start gap-1">
@@ -109,7 +114,6 @@ export function HomePage() {
             </div>
             <div className="absolute bottom-1 left-0 w-full h-[1px] bg-slate-900/10 dark:bg-slate-100/10" />
           </div>
-          {/* Controls bar */}
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-10 gap-6">
             <div className="flex items-center gap-4">
               <Popover>
@@ -213,7 +217,7 @@ export function HomePage() {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                   {[1, 2, 3, 4].map(i => <div key={i} className="h-72 w-full bg-slate-100 dark:bg-slate-800 animate-pulse rounded-2xl border-none ring-1 ring-slate-200" />)}
                 </div>
-              ) : digest && digest.clusters?.length > 0 ? (
+              ) : digest?.clusters && digest.clusters.length > 0 ? (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                   {digest.clusters.map((cluster) => (
                     <motion.div key={cluster.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4 }}>
@@ -248,7 +252,7 @@ export function HomePage() {
                           <div className="flex gap-4">
                             <div className="flex-1 bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 text-center border border-slate-100 dark:border-slate-800">
                               <span className="block text-[8px] font-black uppercase text-slate-400 mb-1 tracking-widest">Aggregate Slant</span>
-                              <span className={cn("text-[10px] font-black uppercase", 
+                              <span className={cn("text-[10px] font-black uppercase",
                                 cluster.meanSlant < -0.15 ? 'text-sky-600' : cluster.meanSlant > 0.15 ? 'text-rose-600' : 'text-slate-900 dark:text-slate-100')}>
                                 {cluster.meanSlant < -0.15 ? 'Progressive' : cluster.meanSlant > 0.15 ? 'Conservative' : 'Neutralized'}
                               </span>
@@ -288,7 +292,7 @@ export function HomePage() {
               )}
             </TabsContent>
             <TabsContent value="topology" className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-              {digest && digest.clusters?.length > 0 ? (
+              {digest?.clusters && digest.clusters.length > 0 ? (
                 <ConsensusMap clusters={digest.clusters} height={650} />
               ) : (
                 <div className="h-[600px] flex items-center justify-center border-2 border-dashed rounded-2xl bg-white dark:bg-slate-900 ring-1 ring-slate-100">
