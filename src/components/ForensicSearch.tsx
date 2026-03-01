@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Filter, Download, ExternalLink, AlertTriangle, Fingerprint } from 'lucide-react';
+import { Search, Filter, Download, ExternalLink, Fingerprint } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
 import { api } from '@/lib/api-client';
+import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import type { VaultStory } from '@shared/news-types';
 export function ForensicSearch() {
@@ -22,8 +25,8 @@ export function ForensicSearch() {
   const handleExportResults = () => {
     if (!results) return;
     const headers = "Title,Source,Slant,Bias,Link,Date\n";
-    const rows = results.map(s => 
-      `"${s.title.replace(/"/g, '""')}","${s.sourceName}",${s.slant},${s.bias},"${s.link}","${format(s.timestamp, 'yyyy-MM-dd')}"`
+    const rows = results.map(s =>
+      `"${(s.title || "").replace(/"/g, '""')}","${s.sourceName || ""}",${s.slant || 0},${s.bias || 0},"${s.link || ""}","${format(s.timestamp || Date.now(), 'yyyy-MM-dd')}"`
     ).join("\n");
     const blob = new Blob([headers + rows], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
@@ -61,11 +64,11 @@ export function ForensicSearch() {
       <div className="lg:col-span-3 space-y-6">
         <div className="relative group">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300 group-focus-within:text-sky-600" />
-          <Input 
-            placeholder="Search individual stories by keyword..." 
-            className="pl-10 h-12 border-2 bg-white dark:bg-slate-950" 
-            value={query} 
-            onChange={e => setQuery(e.target.value)} 
+          <Input
+            placeholder="Search individual stories by keyword..."
+            className="pl-10 h-12 border-2 bg-white dark:bg-slate-950"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
           />
         </div>
         <div className="bg-white dark:bg-slate-950 rounded-2xl border-2 overflow-hidden shadow-sm">
@@ -89,15 +92,15 @@ export function ForensicSearch() {
                     <TableCell className="py-4">
                       <div>
                         <p className="font-bold text-sm text-slate-900 dark:text-slate-100 leading-tight group-hover:text-sky-700 transition-colors">{story.title}</p>
-                        <p className="text-[10px] text-slate-400 mt-1 uppercase font-black tracking-widest">{format(story.timestamp, 'MMM dd, yyyy')}</p>
+                        <p className="text-[10px] text-slate-400 mt-1 uppercase font-black tracking-widest">{format(story.timestamp || Date.now(), 'MMM dd, yyyy')}</p>
                       </div>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="text-[9px] font-black uppercase tracking-tighter bg-slate-50 dark:bg-slate-800 text-slate-400">{story.sourceName}</Badge>
                     </TableCell>
                     <TableCell className="text-center">
-                      <div className={cn("text-[10px] font-black", story.slant < -0.2 ? 'text-sky-600' : story.slant > 0.2 ? 'text-rose-600' : 'text-slate-400')}>
-                        {story.slant.toFixed(1)}
+                      <div className={cn("text-[10px] font-black", (story.slant || 0) < -0.2 ? 'text-sky-600' : (story.slant || 0) > 0.2 ? 'text-rose-600' : 'text-slate-400')}>
+                        {(story.slant || 0).toFixed(1)}
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
