@@ -6,6 +6,8 @@ import type { Env } from "./core-utils";
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 ];
+// Expanded stop words to neutralize common journalistic filler
+const STOP_WORDS = new Set(['this', 'that', 'with', 'from', 'about', 'would', 'could', 'their', 'there', 'which', 'after', 'before', 'where', 'while', 'under', 'during', 'against']);
 async function fetchWithRetry(url: string, attempts: number = 3): Promise<Response | null> {
   for (let i = 0; i < attempts; i++) {
     try {
@@ -15,9 +17,7 @@ async function fetchWithRetry(url: string, attempts: number = 3): Promise<Respon
         signal: AbortSignal.timeout(8000)
       });
       if (res.ok) return res;
-    } catch (e) {
-      /* Silently swallow fetch errors during retry phase */
-    }
+    } catch (e) {}
     if (i < attempts - 1) {
       await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
     }
@@ -33,7 +33,7 @@ export async function fetchAndParseRSS(sourceId: string, sourceName: string, url
     const jsonObj = parser.parse(xml);
     const items = jsonObj.rss?.channel?.item || jsonObj.feed?.entry || [];
     const normalizedItems = Array.isArray(items) ? items : [items];
-    const cutoff = subHours(new Date(), 48);
+    const cutoff = subHours(new Date(), 72); // Increased window slightly for weekend reporting cycles
     return normalizedItems
       .map((item: any) => {
         const pubDateStr = item.pubDate || item.updated || item['dc:date'] || new Date().toISOString();
@@ -50,7 +50,7 @@ export async function fetchAndParseRSS(sourceId: string, sourceName: string, url
           link: item.link?.['@_href'] || (typeof item.link === 'string' ? item.link : item.link?.link || ""),
           pubDate: pubDate.toISOString(),
           description: description,
-          contentSnippet: description.substring(0, 300).replace(/<[^>]*>?/gm, '') || title
+          contentSnippet: description.substring(0, 400).replace(/<[^>]*>?/gm, '') || title
         };
       })
       .filter(a => {
@@ -65,7 +65,7 @@ function getTokens(text: string): Set<string> {
   return new Set(text.toLowerCase()
     .replace(/[^\w\s]/g, '')
     .split(/\s+/)
-    .filter(t => t.length > 3));
+    .filter(t => t.length > 3 && !STOP_WORDS.has(t)));
 }
 function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
   if (a.size === 0 || b.size === 0) return 0;
@@ -78,7 +78,9 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
   const sourceMap = new Map(sources.map(s => [s.id, s]));
   const clusters: NewsCluster[] = [];
   const tokenMap = new Map<string, Set<string>>();
-  articles.forEach(article => tokenMap.set(article.id, getTokens(article.title + " " + article.contentSnippet.substring(0, 100))));
+  articles.forEach(article => {
+    tokenMap.set(article.id, getTokens(article.title + " " + article.contentSnippet.substring(0, 150)));
+  });
   const processedIds = new Set<string>();
   const now = new Date();
   for (const article of articles) {
@@ -89,7 +91,8 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
     for (const other of articles) {
       if (processedIds.has(other.id)) continue;
       const tokensB = tokenMap.get(other.id)!;
-      if (jaccardSimilarity(tokensA, tokensB) > 0.18) {
+      // Increased threshold to 0.22 for stricter grouping
+      if (jaccardSimilarity(tokensA, tokensB) > 0.22) {
         clusterItems.push(other);
         processedIds.add(other.id);
       }
@@ -97,6 +100,7 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
     const uniqueSources = Array.from(new Set(clusterItems.map(a => a.sourceId)));
     const sourceNames = uniqueSources.map(id => sourceMap.get(id)?.name || "Unknown");
     const sourceCount = sourceNames.length;
+    // Choose centroid by highest internal consistency
     let centroidArticle = clusterItems[0];
     if (clusterItems.length > 2) {
       let maxTotalSim = -1;
@@ -114,9 +118,7 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
       }
     }
     let totalSlant = 0;
-    uniqueSources.forEach(id => {
-      totalSlant += sourceMap.get(id)?.slant || 0;
-    });
+    uniqueSources.forEach(id => { totalSlant += sourceMap.get(id)?.slant || 0; });
     const meanSlant = totalSlant / (uniqueSources.length || 1);
     let avgSim = 1.0;
     if (clusterItems.length > 1) {
@@ -128,17 +130,18 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
           pairs++;
         }
       }
-      avgSim = totalSim / pairs;
+      avgSim = totalSim / (pairs || 1);
     }
-    const sourceDiversityWeight = Math.min(1.5, 1 + (sourceCount * 0.15));
+    // Impact Score Calculation: Higher weight on source diversity and consensus
+    const sourceDiversityWeight = Math.min(2.0, 1 + (sourceCount * 0.2));
     const consensusFactor = Math.min(1, avgSim * sourceDiversityWeight);
     const newestDate = clusterItems.reduce((max, a) => {
       const d = parseISO(a.pubDate);
       return d > max ? d : max;
     }, new Date(0));
     const hoursOld = Math.max(0, differenceInHours(now, newestDate));
-    const recencyScore = Math.exp(-hoursOld / 48);
-    const impactScore = (sourceCount * 0.6) + (recencyScore * 3.0) + (consensusFactor * 2.0);
+    const recencyScore = Math.exp(-hoursOld / 36); // Faster decay for news relevance
+    const impactScore = (sourceCount * 0.8) + (recencyScore * 4.0) + (consensusFactor * 3.0);
     clusters.push({
       id: crypto.randomUUID(),
       representativeTitle: centroidArticle.title,
@@ -147,29 +150,27 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
       sourceCount,
       neutralSummary: centroidArticle.contentSnippet,
       impactScore,
-      biasScore: 1 - avgSim,
+      biasScore: Math.max(0, 1 - avgSim),
       clusterVariance: Math.max(0, 1 - consensusFactor),
       meanSlant,
       consensusFactor
     });
   }
+  // Return top 15 significant clusters
   return clusters.sort((a, b) => b.impactScore - a.impactScore).slice(0, 15);
 }
 export function generateCSV(digest: DailyDigest): string {
-  const headers = ["Rank", "Title", "Mean Slant", "Consensus", "Sources", "Link"];
+  const headers = ["Rank", "Title", "Mean Slant", "Consensus", "Source Count", "Link"];
   const rows = digest.clusters.map((c, idx) => [
     (idx + 1).toString(),
     c.representativeTitle.replace(/"/g, '""'),
-    c.meanSlant.toFixed(2),
-    c.consensusFactor.toFixed(2),
-    c.sourceSpread.join('; '),
+    c.meanSlant.toFixed(3),
+    (c.consensusFactor * 100).toFixed(0) + "%",
+    c.sourceCount.toString(),
     c.articles[0]?.link || ""
   ]);
   return [headers, ...rows].map(r => r.map(cell => `"${cell}"`).join(",")).join("\n");
 }
-/**
- * UTF-8 safe Base64 encoding for Cloudflare Workers
- */
 function utf8ToBase64(str: string): string {
   const bytes = new TextEncoder().encode(str);
   let binary = "";
@@ -182,12 +183,12 @@ export async function sendDigestEmail(digest: DailyDigest, recipient: string): P
   try {
     const csvContent = generateCSV(digest);
     const base64Csv = utf8ToBase64(csvContent);
-    const summary = digest.clusters.map((c, i) => `${i + 1}. ${c.representativeTitle} (Consensus: ${(c.consensusFactor*100).toFixed(0)}%)`).join("\n");
-    const body = `Verification Report Architected by Veritas Lens.\n\nKey Clusters:\n${summary}\n\nAttached CSV contains full topology and source mapping.`;
+    const summary = digest.clusters.map((c, i) => `${i + 1}. ${c.representativeTitle} (${(c.consensusFactor*100).toFixed(0)}% Consensus)`).join("\n");
+    const body = `Veritas Lens: Truth-First Intelligence Briefing.\n\nToday's Key Clusters:\n${summary}\n\nAttached CSV contains the full reporting topology.`;
     const payload = {
       personalizations: [{ to: [{ email: recipient }] }],
-      from: { email: "no-reply@veritas-lens.ai", name: "Veritas Lens Architect" },
-      subject: `Truth-First Digest: ${digest.clusterCount} Intelligence Clusters Found`,
+      from: { email: "intelligence@veritas-lens.ai", name: "Veritas Lens Architect" },
+      subject: `Morning Intelligence: ${digest.clusterCount} Consensus Hubs Found`,
       content: [{ type: "text/plain", value: body }],
       attachments: [{ content: base64Csv, filename: `veritas-report-${digest.id}.csv`, type: "text/csv", disposition: "attachment" }]
     };

@@ -5,8 +5,8 @@ export default {
   theme: {
   	extend: {
   		fontFamily: {
-  			sans: ['Inter', 'sans-serif'],
-			serif: ['Merriweather', 'serif'],
+  			sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+			serif: ['Merriweather', 'Georgia', 'serif'],
   			mono: ['JetBrains Mono', 'monospace']
   		},
   		colors: {
@@ -34,7 +34,10 @@ export default {
   				DEFAULT: 'hsl(var(--accent))',
   				foreground: 'hsl(var(--accent-foreground))'
   			}
-  		}
+  		},
+        animation: {
+          'pulse-fast': 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        }
   	}
   },
   plugins: [require("tailwindcss-animate")]

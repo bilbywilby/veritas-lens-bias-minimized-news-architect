@@ -6,7 +6,6 @@ import { fetchAndParseRSS, clusterArticles, generateCSV } from "./news-utils";
 import { format, parseISO, startOfDay, endOfDay, subDays } from "date-fns";
 import type { DailyDigest } from "@shared/news-types";
 export function userRoutes(app: Hono<{ Bindings: Env }>) {
-  // Global middleware to prevent caching of dynamic intelligence data
   app.use('/api/digest/*', async (c, next) => {
     await next();
     c.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -72,7 +71,6 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       const { items } = await DailyDigestEntity.list(c.env, null, 1000);
       let filtered = items;
       if (dateParam) {
-        // Tolerant date parsing: floor to start of the day for consistent filtering
         const parsedDate = parseISO(dateParam);
         const targetStart = startOfDay(parsedDate).getTime();
         const targetEnd = endOfDay(parsedDate).getTime();
@@ -81,7 +79,6 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       const sorted = filtered.sort((a, b) => b.generatedAt - a.generatedAt).slice(0, limit);
       return ok(c, { items: sorted });
     } catch (e) {
-      // Always return a valid structure even on failure to prevent frontend crashes
       return ok(c, { items: [] });
     }
   });
@@ -102,15 +99,16 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     const sourcesPage = await NewsSourceEntity.list(c.env);
     const activeSources = sourcesPage.items.filter(s => s.active);
     if (activeSources.length === 0) return bad(c, "No active sources configured");
-    let allArticles = [];
-    for (const src of activeSources) {
+    // Parallelized fetch and parse for maximum speed at the Edge
+    const fetchResults = await Promise.all(activeSources.map(async (src) => {
       try {
-        const articles = await fetchAndParseRSS(src.id, src.name, src.url);
-        allArticles.push(...articles);
+        return await fetchAndParseRSS(src.id, src.name, src.url);
       } catch (e) {
-        console.error(`Failed to fetch from ${src.name}:`, e);
+        console.error(`[PIPELINE] Failed to fetch from ${src.name}:`, e);
+        return [];
       }
-    }
+    }));
+    const allArticles = fetchResults.flat();
     if (allArticles.length === 0) return bad(c, "No articles found in feeds");
     const uniqueArticles = allArticles.filter((v, i, a) => a.findIndex(t => (t.link === v.link)) === i);
     const clusters = await clusterArticles(uniqueArticles, c.env);
