@@ -10,6 +10,7 @@ import { RouteErrorBoundary } from '@/components/RouteErrorBoundary';
 import '@/index.css'
 import { HomePage } from '@/pages/HomePage'
 import { SourcesPage } from '@/pages/SourcesPage'
+import { ArchivePage } from '@/pages/ArchivePage'
 const queryClient = new QueryClient();
 const router = createBrowserRouter([
   {
@@ -20,6 +21,11 @@ const router = createBrowserRouter([
   {
     path: "/sources",
     element: <SourcesPage />,
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: "/archive",
+    element: <ArchivePage />,
     errorElement: <RouteErrorBoundary />,
   }
 ]);

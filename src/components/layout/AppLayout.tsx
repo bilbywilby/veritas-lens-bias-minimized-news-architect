@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Home, Rss, Archive, ShieldCheck, Menu } from "lucide-react";
+import { Home, Rss, Archive, ShieldCheck } from "lucide-react";
 import { SidebarProvider, SidebarInset, SidebarTrigger, Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui/sidebar";
 import { ThemeToggle } from "@/components/ThemeToggle";
 export function AppLayout({ children, container = false }: { children: React.ReactNode; container?: boolean }) {
@@ -31,18 +31,18 @@ export function AppLayout({ children, container = false }: { children: React.Rea
             </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={location.pathname === "/archive"}>
-                <Link to="/"><Archive className="mr-2 h-4 w-4" /> Archive Vault</Link>
+                <Link to="/archive"><Archive className="mr-2 h-4 w-4" /> Archive Vault</Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarContent>
       </Sidebar>
-      <SidebarInset className="bg-[#f8fafc]">
-        <header className="flex h-16 items-center justify-between border-b bg-white px-6">
+      <SidebarInset className="bg-[#f8fafc] dark:bg-slate-950">
+        <header className="flex h-16 items-center justify-between border-b bg-white dark:bg-slate-900 px-6">
           <SidebarTrigger />
           <ThemeToggle className="relative top-0 right-0" />
         </header>
-        <main className={container ? "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" : ""}>
+        <main className={container ? "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-10 lg:py-12" : ""}>
           {children}
         </main>
       </SidebarInset>

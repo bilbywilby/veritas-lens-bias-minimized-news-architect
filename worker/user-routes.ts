@@ -1,75 +1,91 @@
 import { Hono } from "hono";
 import type { Env } from './core-utils';
-import { UserEntity, ChatBoardEntity } from "./entities";
+import { NewsSourceEntity, DailyDigestEntity } from "./news-entities";
 import { ok, bad, notFound, isStr } from './core-utils';
-
+import { fetchAndParseRSS, clusterArticles, generateCSV } from "./news-utils";
+import { format } from "date-fns";
 export function userRoutes(app: Hono<{ Bindings: Env }>) {
-  app.get('/api/test', (c) => c.json({ success: true, data: { name: 'CF Workers Demo' }}));
-
-  // USERS
-  app.get('/api/users', async (c) => {
-    await UserEntity.ensureSeed(c.env);
-    const cq = c.req.query('cursor');
-    const lq = c.req.query('limit');
-    const page = await UserEntity.list(c.env, cq ?? null, lq ? Math.max(1, (Number(lq) | 0)) : undefined);
+  // --- SOURCES MANAGEMENT ---
+  app.get('/api/sources', async (c) => {
+    await NewsSourceEntity.ensureSeed(c.env);
+    const page = await NewsSourceEntity.list(c.env);
     return ok(c, page);
   });
-
-  app.post('/api/users', async (c) => {
-    const { name } = (await c.req.json()) as { name?: string };
-    if (!name?.trim()) return bad(c, 'name required');
-    return ok(c, await UserEntity.create(c.env, { id: crypto.randomUUID(), name: name.trim() }));
+  app.post('/api/sources', async (c) => {
+    const { name, url } = (await c.req.json()) as { name?: string; url?: string };
+    if (!name?.trim() || !url?.trim()) return bad(c, 'name and url required');
+    const source = await NewsSourceEntity.create(c.env, {
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      url: url.trim(),
+      active: true,
+      weight: 3
+    });
+    return ok(c, source);
   });
-
-  // CHATS
-  app.get('/api/chats', async (c) => {
-    await ChatBoardEntity.ensureSeed(c.env);
-    const cq = c.req.query('cursor');
-    const lq = c.req.query('limit');
-    const page = await ChatBoardEntity.list(c.env, cq ?? null, lq ? Math.max(1, (Number(lq) | 0)) : undefined);
-    return ok(c, page);
+  app.patch('/api/sources/:id', async (c) => {
+    const id = c.req.param('id');
+    const updates = (await c.req.json()) as { active?: boolean; weight?: number };
+    const entity = new NewsSourceEntity(c.env, id);
+    if (!await entity.exists()) return notFound(c);
+    await entity.patch(updates);
+    return ok(c, await entity.getState());
   });
-
-  app.post('/api/chats', async (c) => {
-    const { title } = (await c.req.json()) as { title?: string };
-    if (!title?.trim()) return bad(c, 'title required');
-    const created = await ChatBoardEntity.create(c.env, { id: crypto.randomUUID(), title: title.trim(), messages: [] });
-    return ok(c, { id: created.id, title: created.title });
+  app.delete('/api/sources/:id', async (c) => {
+    const deleted = await NewsSourceEntity.delete(c.env, c.req.param('id'));
+    return ok(c, { id: c.req.param('id'), deleted });
   });
-
-  // MESSAGES
-  app.get('/api/chats/:chatId/messages', async (c) => {
-    const chat = new ChatBoardEntity(c.env, c.req.param('chatId'));
-    if (!await chat.exists()) return notFound(c, 'chat not found');
-    return ok(c, await chat.listMessages());
+  // --- DIGEST & ARCHIVE ---
+  app.get('/api/digest/latest', async (c) => {
+    const { items } = await DailyDigestEntity.list(c.env, null, 1);
+    return ok(c, items[0] || null);
   });
-
-  app.post('/api/chats/:chatId/messages', async (c) => {
-    const chatId = c.req.param('chatId');
-    const { userId, text } = (await c.req.json()) as { userId?: string; text?: string };
-    if (!isStr(userId) || !text?.trim()) return bad(c, 'userId and text required');
-    const chat = new ChatBoardEntity(c.env, chatId);
-    if (!await chat.exists()) return notFound(c, 'chat not found');
-    return ok(c, await chat.sendMessage(userId, text.trim()));
+  app.get('/api/digest/list', async (c) => {
+    const limit = c.req.query('limit');
+    const page = await DailyDigestEntity.list(c.env, null, limit ? parseInt(limit) : 50);
+    // Sort by generation date descending
+    const sorted = page.items.sort((a, b) => b.generatedAt - a.generatedAt);
+    return ok(c, { items: sorted });
   });
-
-  // DELETE: Users
-  app.delete('/api/users/:id', async (c) => ok(c, { id: c.req.param('id'), deleted: await UserEntity.delete(c.env, c.req.param('id')) }));
-
-  app.post('/api/users/deleteMany', async (c) => {
-    const { ids } = (await c.req.json()) as { ids?: string[] };
-    const list = ids?.filter(isStr) ?? [];
-    if (list.length === 0) return bad(c, 'ids required');
-    return ok(c, { deletedCount: await UserEntity.deleteMany(c.env, list), ids: list });
+  app.get('/api/digest/:id/csv', async (c) => {
+    const id = c.req.param('id');
+    const entity = new DailyDigestEntity(c.env, id);
+    if (!await entity.exists()) return notFound(c);
+    const digest = await entity.getState();
+    const csv = generateCSV(digest);
+    return new Response(csv, {
+      headers: {
+        'Content-Type': 'text/csv',
+        'Content-Disposition': `attachment; filename="veritas-lens-${id}.csv"`
+      }
+    });
   });
-
-  // DELETE: Chats
-  app.delete('/api/chats/:id', async (c) => ok(c, { id: c.req.param('id'), deleted: await ChatBoardEntity.delete(c.env, c.req.param('id')) }));
-
-  app.post('/api/chats/deleteMany', async (c) => {
-    const { ids } = (await c.req.json()) as { ids?: string[] };
-    const list = ids?.filter(isStr) ?? [];
-    if (list.length === 0) return bad(c, 'ids required');
-    return ok(c, { deletedCount: await ChatBoardEntity.deleteMany(c.env, list), ids: list });
+  // --- INTELLIGENCE PIPELINE ---
+  app.post('/api/pipeline/run', async (c) => {
+    const sourcesPage = await NewsSourceEntity.list(c.env);
+    const activeSources = sourcesPage.items.filter(s => s.active);
+    if (activeSources.length === 0) return bad(c, "No active sources configured");
+    let allArticles = [];
+    for (const src of activeSources) {
+      const articles = await fetchAndParseRSS(src.id, src.name, src.url);
+      allArticles.push(...articles);
+    }
+    if (allArticles.length === 0) return bad(c, "No articles found in feeds");
+    const clusters = clusterArticles(allArticles);
+    const topClusters = clusters.slice(0, 15);
+    const digestId = format(new Date(), 'yyyy-MM-dd-HHmm');
+    const digest = await DailyDigestEntity.create(c.env, {
+      id: digestId,
+      generatedAt: Date.now(),
+      articleCount: allArticles.length,
+      clusterCount: topClusters.length,
+      clusters: topClusters
+    });
+    // Mock MailChannels integration
+    const sendEmail = c.req.query('sendEmail') === 'true';
+    if (sendEmail) {
+       console.log(`[PIPELINE] Mock email triggered for digest ${digestId}`);
+    }
+    return ok(c, digest);
   });
 }

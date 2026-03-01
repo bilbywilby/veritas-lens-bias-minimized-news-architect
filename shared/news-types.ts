@@ -3,7 +3,7 @@ export interface NewsSource {
   name: string;
   url: string;
   active: boolean;
-  weight: number;
+  weight: number; // 1-5 reliability scale
 }
 export interface Article {
   id: string;
@@ -19,14 +19,20 @@ export interface NewsCluster {
   id: string;
   representativeTitle: string;
   articles: Article[];
-  sourceSpread: string[]; // List of source names
+  sourceSpread: string[]; // List of unique source names
+  sourceCount: number;
   neutralSummary: string;
-  impactScore: number;
+  impactScore: number; // Algorithmic priority score
 }
 export interface DailyDigest {
-  id: string; // YYYY-MM-DD
+  id: string; // Typically YYYY-MM-DD-HHmm
   generatedAt: number;
   articleCount: number;
   clusterCount: number;
   clusters: NewsCluster[];
+}
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: string;
 }
