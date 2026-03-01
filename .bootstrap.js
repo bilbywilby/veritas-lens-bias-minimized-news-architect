@@ -86,7 +86,7 @@ function runSetupCommands() {
     "bun install recharts",
     "bun install framer-motion",
     "bun install lucide-react",
-    "bun install date-fns"
+    "bun install date-fns fast-xml-parser recharts framer-motion lucide-react papaparse"
 ];
     
     if (commands.length === 0) {
