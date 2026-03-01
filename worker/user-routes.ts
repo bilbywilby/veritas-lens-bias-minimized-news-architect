@@ -37,11 +37,13 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     return ok(c, { id: c.req.param('id'), deleted });
   });
   app.get('/api/digest/latest', async (c) => {
+    await DailyDigestEntity.ensureSeed(c.env);
     const { items } = await DailyDigestEntity.list(c.env, null, 100);
     const sorted = items.sort((a, b) => b.generatedAt - a.generatedAt);
     return ok(c, sorted[0] || null);
   });
   app.get('/api/analytics/consensus', async (c) => {
+    await DailyDigestEntity.ensureSeed(c.env);
     const { items } = await DailyDigestEntity.list(c.env, null, 1000);
     const fourteenDaysAgo = subDays(new Date(), 14).getTime();
     const series = items
@@ -56,6 +58,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     return ok(c, series);
   });
   app.get('/api/digest/list', async (c) => {
+    await DailyDigestEntity.ensureSeed(c.env);
     const dateParam = c.req.query('date');
     const limit = parseInt(c.req.query('limit') || '50');
     const { items } = await DailyDigestEntity.list(c.env, null, 1000);
@@ -92,7 +95,6 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     if (allArticles.length === 0) return bad(c, "No articles found in feeds");
     const uniqueArticles = allArticles.filter((v, i, a) => a.findIndex(t => (t.link === v.link)) === i);
     const clusters = await clusterArticles(uniqueArticles, c.env);
-    // Global Consensus Calculation: 10 - (StDev of Slants across clusters)
     const slants = clusters.map(cl => cl.meanSlant);
     const mean = slants.reduce((a, b) => a + b, 0) / slants.length;
     const variance = slants.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / slants.length;

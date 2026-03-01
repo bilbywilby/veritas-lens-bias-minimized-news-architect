@@ -4,7 +4,7 @@ import { Plus, Trash2, Globe, Shield, Activity, TrendingUp } from 'lucide-react'
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
@@ -54,7 +54,10 @@ export function SourcesPage() {
                 </Button>
               </DialogTrigger>
               <DialogContent>
-                <DialogHeader><DialogTitle className="font-serif italic text-2xl">New Information Stream</DialogTitle></DialogHeader>
+                <DialogHeader>
+                  <DialogTitle className="font-serif italic text-2xl">New Information Stream</DialogTitle>
+                  <DialogDescription>Register a new RSS intelligence stream with slant profile.</DialogDescription>
+                </DialogHeader>
                 <div className="grid gap-6 py-6">
                   <div className="grid gap-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest">Publisher Identity</Label>

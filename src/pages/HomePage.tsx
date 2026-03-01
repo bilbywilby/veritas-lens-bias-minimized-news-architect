@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Newspaper, Zap, FileDown, Calendar as CalendarIcon, Mail, Network, LayoutList, Fingerprint, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Newspaper, Zap, FileDown, Calendar as CalendarIcon, Mail, Network, LayoutList, Fingerprint, TrendingUp, TrendingDown, Minus, HelpCircle, Rss } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -14,18 +14,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ConsensusMap } from '@/components/ConsensusMap';
 import { ConsensusTimeline } from '@/components/ConsensusTimeline';
 import { NeutralizationDeepDive } from '@/components/NeutralizationDeepDive';
+import { TourModal } from '@/components/TourModal';
 import { api } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { DailyDigest, NewsCluster } from '@shared/news-types';
 import { format } from 'date-fns';
 import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
 export function HomePage() {
   const queryClient = useQueryClient();
   const [date, setDate] = useState<Date | undefined>(new Date());
-  const [emailTo, setEmailTo] = useState('');
-  const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
   const [selectedCluster, setSelectedCluster] = useState<NewsCluster | null>(null);
+  const [showTour, setShowTour] = useState(false);
   const formattedDate = date ? format(date, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
   const { data: digest, isLoading } = useQuery<DailyDigest | null>({
     queryKey: ['digest', formattedDate],
@@ -56,15 +57,18 @@ export function HomePage() {
     if (Math.abs(diff) < 0.1) return <Minus className="h-3 w-3 text-slate-400" />;
     return diff > 0 ? <TrendingUp className="h-3 w-3 text-emerald-500" /> : <TrendingDown className="h-3 w-3 text-rose-500" />;
   };
+  const isSample = digest?.id?.includes('sample');
   return (
     <AppLayout container>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="py-8 md:py-10 lg:py-12">
-          {/* Newspaper Header Polished */}
-          <div className="border-y-2 border-slate-900 dark:border-slate-100 py-6 mb-12">
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-              <div className="hidden md:block text-[10px] font-black uppercase tracking-widest text-slate-400">
-                Issue No. {digest?.id?.split('-').join('') || 'ALPHA'}
+          <div className="border-y-2 border-slate-900 dark:border-slate-100 py-6 mb-12 relative overflow-hidden">
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4 relative z-10">
+              <div className="hidden md:flex items-center gap-2">
+                <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  Issue No. {digest?.id?.split('-').join('') || 'ALPHA'}
+                </div>
+                {isSample && <Badge variant="outline" className="text-[8px] border-amber-200 bg-amber-50 text-amber-600 font-black uppercase tracking-tighter">Sample Record</Badge>}
               </div>
               <h2 className="text-6xl md:text-7xl font-serif font-black text-slate-900 dark:text-slate-50 italic tracking-tighter text-center uppercase">
                 Veritas Lens
@@ -93,6 +97,9 @@ export function HomePage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
+              <Button variant="ghost" size="sm" onClick={() => setShowTour(true)} className="text-[10px] font-bold uppercase tracking-widest">
+                <HelpCircle className="mr-2 h-4 w-4" /> Walkthrough
+              </Button>
               <Button variant="outline" size="sm" onClick={() => digest && (window.location.href = `/api/digest/${digest.id}/csv`)} disabled={!digest} className="border-2 font-bold uppercase text-[10px]">
                 <FileDown className="mr-2 h-4 w-4" /> Download Intelligence
               </Button>
@@ -185,8 +192,11 @@ export function HomePage() {
               ) : (
                 <div className="text-center py-32 border-2 border-dashed rounded-3xl bg-slate-50/50 dark:bg-slate-900/50">
                   <Newspaper className="mx-auto h-12 w-12 text-slate-300 mb-4" />
-                  <h3 className="text-xl font-serif font-bold italic">No Intelligence Discovered</h3>
-                  <p className="text-sm text-muted-foreground mt-2">Historical vault records empty for this date parameter.</p>
+                  <h3 className="text-xl font-serif font-bold italic">Intelligence Gap Detected</h3>
+                  <p className="text-sm text-muted-foreground mt-2 mb-8">No localized digest exists for this date. Configure your streams to begin ingestion.</p>
+                  <Button asChild className="bg-sky-600 hover:bg-sky-700 font-bold uppercase text-[10px]">
+                    <Link to="/sources"><Rss className="mr-2 h-4 w-4" /> Registry Setup</Link>
+                  </Button>
                 </div>
               )}
             </TabsContent>
@@ -207,6 +217,7 @@ export function HomePage() {
         isOpen={!!selectedCluster}
         onOpenChange={(open) => !open && setSelectedCluster(null)}
       />
+      <TourModal forceOpen={showTour} onClose={() => setShowTour(false)} />
     </AppLayout>
   );
 }
