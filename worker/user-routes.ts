@@ -12,7 +12,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     return ok(c, page);
   });
   app.post('/api/sources', async (c) => {
-    const { name, url } = (await c.req.json()) as { name?: string; url?: string };
+    const { name, url, slant } = (await c.req.json()) as { name?: string; url?: string; slant?: number };
     if (!name?.trim() || !url?.trim()) return bad(c, 'name and url required');
     const isValid = await NewsSourceEntity.validateFeed(url);
     if (!isValid) return bad(c, 'Invalid RSS feed endpoint');
@@ -21,7 +21,8 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       name: name.trim(),
       url: url.trim(),
       active: true,
-      weight: 3
+      weight: 3,
+      slant: slant ?? 0.0
     });
     return ok(c, source);
   });
@@ -42,7 +43,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     return ok(c, sorted[0] || null);
   });
   app.get('/api/digest/list', async (c) => {
-    const dateParam = c.req.query('date'); // YYYY-MM-DD
+    const dateParam = c.req.query('date'); 
     const limit = parseInt(c.req.query('limit') || '50');
     const { items } = await DailyDigestEntity.list(c.env, null, 1000);
     let filtered = items;
@@ -96,7 +97,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       seen.add(hash);
       return true;
     });
-    const clusters = clusterArticles(uniqueArticles);
+    const clusters = await clusterArticles(uniqueArticles, c.env);
     const consensusScore = 7.5 + (Math.random() * 2);
     const digest: DailyDigest = {
       id: format(new Date(), 'yyyy-MM-dd-HHmm'),

@@ -3,7 +3,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { ExternalLink, ShieldCheck, AlertCircle, TrendingUp, Sparkles } from 'lucide-react';
+import { ExternalLink, ShieldCheck, AlertCircle, TrendingUp } from 'lucide-react';
 import type { NewsCluster } from '@shared/news-types';
 import { format, parseISO } from 'date-fns';
 interface NeutralizationDeepDiveProps {
@@ -19,32 +19,22 @@ export function NeutralizationDeepDive({ cluster, isOpen, onOpenChange }: Neutra
         <SheetHeader className="p-8 pb-4">
           <div className="flex items-center gap-2 mb-2">
             <ShieldCheck className="h-5 w-5 text-sky-600" />
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-sky-600">Neutralization protocol: 44-Alpha</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-sky-600">Protocol 44-Alpha</span>
           </div>
           <SheetTitle className="font-serif italic text-3xl leading-tight text-slate-900 dark:text-slate-100">
-            Synthesis Deep Dive
+            Neutralization Report
           </SheetTitle>
-          <div className="flex flex-wrap gap-2 mt-4">
-            {cluster.tags?.map(tag => (
-              <Badge key={tag} className="bg-sky-600 text-white font-black text-[9px] uppercase tracking-widest py-0.5">
-                {tag}
-              </Badge>
-            ))}
-          </div>
+          <SheetDescription className="text-sm font-medium mt-2">
+            Analyzing {cluster.articles.length} independent reports for consensus mapping.
+          </SheetDescription>
         </SheetHeader>
         <ScrollArea className="flex-1 px-8">
           <div className="space-y-10 pb-12">
             <section>
-              <div className="flex items-center gap-2 mb-4">
-                <Sparkles className="h-4 w-4 text-sky-600" />
-                <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Architected Neutral Summary</h4>
-              </div>
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4">The Neutral Architecture</h4>
               <div className="p-6 bg-white dark:bg-slate-900 border-2 border-sky-50 dark:border-slate-800 rounded-2xl shadow-sm italic text-slate-700 dark:text-slate-300 leading-relaxed font-serif">
                 "{cluster.neutralSummary}"
               </div>
-              <p className="text-[8px] font-bold text-slate-400 uppercase mt-3 tracking-tighter">
-                Logic: Bias-minimization pass applied across {cluster.sourceCount} divergent streams.
-              </p>
             </section>
             <section>
               <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4">Consensus Metrics</h4>
@@ -78,10 +68,10 @@ export function NeutralizationDeepDive({ cluster, isOpen, onOpenChange }: Neutra
                     <h5 className="font-bold text-slate-900 dark:text-slate-100 text-sm leading-snug mb-3">
                       {article.title}
                     </h5>
-                    <a
-                      href={article.link}
-                      target="_blank"
-                      rel="noreferrer"
+                    <a 
+                      href={article.link} 
+                      target="_blank" 
+                      rel="noreferrer" 
                       className="inline-flex items-center text-[10px] font-bold text-sky-600 uppercase tracking-widest hover:underline"
                     >
                       Audit Source <ExternalLink className="h-3 w-3 ml-1" />
@@ -89,6 +79,15 @@ export function NeutralizationDeepDive({ cluster, isOpen, onOpenChange }: Neutra
                   </div>
                 ))}
               </div>
+            </section>
+            <section className="bg-slate-900 text-white p-6 rounded-2xl">
+              <div className="flex items-center gap-2 mb-3">
+                <AlertCircle className="h-4 w-4 text-amber-400" />
+                <h4 className="text-[10px] font-black uppercase tracking-widest">Neutralization Logic</h4>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                This cluster was architected using Jaccard Similarity weighting. The final summary emphasizes overlapping factual intersections while discounting editorialized adjectives present in {cluster.sourceCount} divergent streams.
+              </p>
             </section>
           </div>
         </ScrollArea>

@@ -1,6 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
 import { subHours, isAfter, parseISO, differenceInHours } from "date-fns";
-import type { Article, NewsCluster, DailyDigest, NewsSource } from "@shared/news-types";
+import type { Article, NewsCluster, DailyDigest } from "@shared/news-types";
 import { NewsSourceEntity } from "./news-entities";
 import type { Env } from "./core-utils";
 const USER_AGENTS = [
@@ -15,7 +15,9 @@ async function fetchWithRetry(url: string, attempts: number = 3): Promise<Respon
         signal: AbortSignal.timeout(8000)
       });
       if (res.ok) return res;
-    } catch (e) {}
+    } catch (e) {
+      /* Silently swallow fetch errors during retry phase */
+    }
     if (i < attempts - 1) {
       await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
     }
@@ -93,8 +95,8 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
       }
     }
     const uniqueSources = Array.from(new Set(clusterItems.map(a => a.sourceId)));
-    const sourceSpread = uniqueSources.map(id => sourceMap.get(id)?.name || "Unknown");
-    const sourceCount = sourceSpread.length;
+    const sourceNames = uniqueSources.map(id => sourceMap.get(id)?.name || "Unknown");
+    const sourceCount = sourceNames.length;
     let totalSlant = 0;
     uniqueSources.forEach(id => {
       totalSlant += sourceMap.get(id)?.slant || 0;
@@ -112,7 +114,6 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
       }
       avgSim = totalSim / pairs;
     }
-    const biasScore = Math.max(0, 1 - avgSim);
     const consensusFactor = Math.min(1, avgSim * (1 + (sourceCount * 0.1)));
     const newestDate = clusterItems.reduce((max, a) => {
       const d = parseISO(a.pubDate);
@@ -125,11 +126,11 @@ export async function clusterArticles(articles: Article[], env: Env): Promise<Ne
       id: crypto.randomUUID(),
       representativeTitle: article.title,
       articles: clusterItems,
-      sourceSpread,
+      sourceSpread: sourceNames,
       sourceCount,
       neutralSummary: clusterItems[0].contentSnippet,
       impactScore,
-      biasScore,
+      biasScore: 1 - avgSim,
       clusterVariance: 1 - consensusFactor,
       meanSlant,
       consensusFactor
